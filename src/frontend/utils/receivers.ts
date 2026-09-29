@@ -63,6 +63,7 @@ import {
     transitionData,
     variables,
     visualizerData,
+    websiteFrames,
     websiteMirrors
 } from "../stores"
 import { newToast } from "./common"
@@ -115,15 +116,21 @@ const receiveOUTPUTasMAIN: any = {
     },
     OUTPUTS: (a: any) => outputs.set(a),
     WEBSITE_STATE: ({ id, attached }: { id: string; attached: boolean }) => {
+        if (get(websiteMirrors)[id] === attached) return
         websiteMirrors.update((a) => {
-            a[id] = { ...(a[id] || {}), attached }
-            if (!attached) delete a[id].frame
+            a[id] = attached
             return a
         })
+        if (!attached) {
+            websiteFrames.update((a) => {
+                delete a[id]
+                return a
+            })
+        }
     },
     WEBSITE_FRAME: ({ id, frame }: { id: string; frame: string }) => {
-        websiteMirrors.update((a) => {
-            a[id] = { ...(a[id] || {}), attached: true, frame }
+        websiteFrames.update((a) => {
+            a[id] = frame
             return a
         })
     },

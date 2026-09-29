@@ -1,6 +1,11 @@
 // Convert DOM input events from the main window preview into Electron input events
 // that are forwarded to the live website in the output window (webContents.sendInputEvent).
 
+// one live website per output & url
+export function getWebsiteKey(outputId: string, src: string) {
+    return outputId + "|" + src
+}
+
 type Modifiers = { shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }
 
 export type WebsiteInputEvent = { type: "mouseDown" | "mouseUp" | "mouseMove"; x: number; y: number; button?: "left" | "middle" | "right"; clickCount?: number; modifiers?: string[] } | { type: "mouseWheel"; x: number; y: number; deltaX: number; deltaY: number; modifiers?: string[] } | { type: "keyDown" | "keyUp" | "char"; keyCode: string; modifiers?: string[] }

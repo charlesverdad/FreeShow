@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { getKeyCode, getKeyEvents, getMouseButton, getRelativePosition } from "./websiteInput"
+import { getKeyCode, getKeyEvents, getMouseButton, getRelativePosition, getWebsiteKey } from "./websiteInput"
 
 const noModifiers = { shiftKey: false, ctrlKey: false, altKey: false, metaKey: false }
 
@@ -27,6 +27,11 @@ describe("websiteInput", () => {
 
     it("sends keyUp on release", () => {
         expect(getKeyEvents({ ...noModifiers, shiftKey: true, key: "Enter" }, "keyup")).toEqual([{ type: "keyUp", keyCode: "Enter", modifiers: ["shift"] }])
+    })
+
+    it("keys live websites by output and url", () => {
+        expect(getWebsiteKey("out1", "https://canva.com/a")).toBe("out1|https://canva.com/a")
+        expect(getWebsiteKey("out1", "https://canva.com/a")).not.toBe(getWebsiteKey("out2", "https://canva.com/a"))
     })
 
     it("maps mouse buttons", () => {

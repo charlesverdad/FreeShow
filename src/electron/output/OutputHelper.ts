@@ -42,8 +42,8 @@ export class OutputHelper {
             WEBSITE_ATTACH: (data: { id: string; webContentsId: number }) => OutputWebsite.attach(data),
             WEBSITE_DETACH: (data: { id: string; webContentsId?: number }) => OutputWebsite.detach(data),
             WEBSITE_MIRROR: (data: { id: string; enabled: boolean }) => OutputWebsite.mirror(data),
-            WEBSITE_INPUT: (data: { id: string; event: any }) => OutputWebsite.input(data),
-            WEBSITE_KEY: (data: { id: string; keyCode: string }) => OutputWebsite.key(data)
+            WEBSITE_KEY: (data: { id: string; keyCode: string }) => OutputWebsite.key(data),
+            WEBSITE_RELOAD: (data: { id: string }) => OutputWebsite.reload(data)
         }
 
         if (msg.channel.includes("MAIN")) return toApp(OUTPUT, msg)

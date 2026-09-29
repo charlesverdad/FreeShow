@@ -23,6 +23,7 @@
     import PdfOutput from "./layers/PdfOutput.svelte"
     import SceneMedia from "./layers/SceneMedia.svelte"
     import SlideContent from "./layers/SlideContent.svelte"
+    import WebsitePool from "../slide/views/WebsitePool.svelte"
     import Window from "./Window.svelte"
 
     export let outputId = ""
@@ -408,6 +409,11 @@
 
         <!-- metadata -->
         <Overlay overlay={{ items: currentMetadataItems }} isClearing={isMetadataClearing || isSlideClearing} {outputId} transition={textTransition} styleIdOverride={styleIdOverride || sceneStyleId} />
+    {/if}
+
+    <!-- websites stay loaded between slides (placed over website items on the current slide) -->
+    {#if $currentWindow === "output" && !mirror}
+        <WebsitePool {ratio} />
     {/if}
 
     {#if layers.includes("overlays")}

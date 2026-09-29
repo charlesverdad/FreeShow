@@ -1,219 +1,65 @@
 <script lang="ts">
     import { onDestroy } from "svelte"
-    import { OUTPUT } from "../../../../types/Channels"
     import { currentWindow, outputs } from "../../../stores"
-    import { send } from "../../../utils/request"
     import Icon from "../../helpers/Icon.svelte"
-    import Button from "../../inputs/Button.svelte"
     import WebsiteMirror from "./WebsiteMirror.svelte"
-    import { formatWebsiteUrl, getWebsiteKey } from "./websiteInput"
+    import { formatWebsiteUrl, getWebsiteKey } from "./websiteHelpers"
+    import { claimWebsite, releaseWebsite } from "./websitePool"
 
     export let src: string
     export let navigation = true
     export let zoom: number | undefined = undefined
-    export let clickable = false
     export let disablePreview = false
     export let outputId = ""
 
-    let webview: any
-    export let ratio: number
+    $: parsedSrc = formatWebsiteUrl(src)
 
-    let webviewReady = false
-    let prevSrc = ""
+    // OUTPUT WINDOW
 
-    function initWebview(node: HTMLElement) {
-        node.addEventListener("dom-ready", onDomReady)
-        node.addEventListener("did-finish-load", setStyle)
-        node.addEventListener("did-navigate", onDidNavigate)
-
-        return {
-            destroy() {
-                node.removeEventListener("dom-ready", onDomReady)
-                node.removeEventListener("did-finish-load", setStyle)
-                node.removeEventListener("did-navigate", onDidNavigate)
-            }
-        }
+    // the website is kept loaded in the output's website pool (so it keeps its state between slides),
+    // and placed over this placeholder while the slide is shown
+    let placeholder: HTMLElement | undefined
+    let claimedSrc = ""
+    $: if ($currentWindow === "output" && placeholder && parsedSrc) claim(parsedSrc, zoom, navigation)
+    function claim(newSrc: string, _zoom: any, _navigation: boolean) {
+        if (claimedSrc && claimedSrc !== newSrc) releaseWebsite(claimedSrc, placeholder!)
+        claimedSrc = newSrc
+        claimWebsite(newSrc, placeholder!, { zoom, navigation })
     }
-
-    function onDomReady() {
-        webviewReady = true
-        attachToOutput()
-        websiteLoaded()
-        checkNavigation()
-        setStyle()
-    }
-
-    function onDidNavigate() {
-        checkNavigation()
-        if (webviewReady) {
-            try {
-                url = webview?.getURL() || parsedSrc
-            } catch (err) {
-                console.debug("Webview getURL failed:", err)
-            }
-        }
-    }
-
-    $: if (webview && webviewReady && (ratio !== undefined || zoom !== undefined)) setStyle()
-
-    let parsedSrc = ""
-    $: if (src) checkURL()
-
-    function checkURL() {
-        parsedSrc = formatWebsiteUrl(src)
-    }
-
-    $: if (parsedSrc && parsedSrc !== prevSrc) {
-        prevSrc = parsedSrc
-        webviewReady = false
-    }
-
-    function setStyle() {
-        if (!webview || !webviewReady) return
-
-        if ($currentWindow !== "output") {
-            try {
-                webview.setAudioMuted(true)
-            } catch (err) {
-                console.debug("Failed to mute webview audio:", err)
-            }
-        }
-
-        const factor = (parseFloat(zoom?.toString() || "100") || 100) / 100
-
-        try {
-            if (typeof webview.setZoomFactor === "function") {
-                webview.setZoomFactor(factor)
-            }
-        } catch (err) {
-            console.debug("Failed to set webview zoom factor:", err)
-        }
-
-        // custom scale does often not work on embeds (Presentations)
-        if (src.includes("embed")) return
-
-        // if preview is fullscreen, don't set ratio
-        // temporary set to always fullscreen as the scaling does not always work in the preview, if there's video streams, etc.
-        let isFullscreen = true || (webview.closest(".previewOutput")?.offsetWidth || 0) > 450
-        const inverse = isFullscreen ? 100 : Math.round(100 / ratio)
-
-        try {
-            webview
-                .executeJavaScript(
-                    `
-                if (document.documentElement) {
-                    document.documentElement.style.zoom = '${factor}';
-                }
-                if (document.body) {
-                    document.body.style.transform = 'scale(${isFullscreen ? 1 : ratio})';
-                    document.body.style.transformOrigin = '0 0';
-                    const scaleFactor = ${inverse};
-                    document.body.style.width = scaleFactor + '%';
-                    document.body.style.height = scaleFactor + '%';
-                }
-            `
-                )
-                ?.catch((err: any) => {
-                    console.debug("Webview executeJavaScript failed:", err)
-                })
-        } catch (err) {
-            console.debug("Failed to execute JavaScript on webview:", err)
-        }
-    }
-
-    function websiteLoaded() {
-        if ($currentWindow !== "output" || !webview || !webviewReady) return
-
-        // set focus on website
-        send(OUTPUT, ["FOCUS"], { id: Object.keys($outputs)[0] })
-        setTimeout(() => {
-            if (webviewReady && webview) {
-                try {
-                    webview.focus()
-                } catch (err) {
-                    console.debug("Webview focus failed:", err)
-                }
-            }
-        })
-    }
-
-    // LIVE INSTANCE
-
-    // the website in the output window is the one live browser instance,
-    // main window previews of that output mirror it instead of loading their own copy
-    $: liveOutputId = $currentWindow === "output" ? outputId || Object.keys($outputs)[0] || "" : ""
-
-    let attachedWebContentsId: number | null = null
-    let attachedKey = ""
-    function attachToOutput() {
-        if (!liveOutputId || !webview) return
-
-        try {
-            const webContentsId = webview.getWebContentsId()
-            if (webContentsId === attachedWebContentsId && attachedKey === getWebsiteKey(liveOutputId, parsedSrc)) return
-            if (attachedWebContentsId !== null) send(OUTPUT, ["WEBSITE_DETACH"], { id: attachedKey, webContentsId: attachedWebContentsId })
-            attachedWebContentsId = webContentsId
-            attachedKey = getWebsiteKey(liveOutputId, parsedSrc)
-            send(OUTPUT, ["WEBSITE_ATTACH"], { id: attachedKey, webContentsId })
-        } catch (err) {
-            console.debug("Could not attach website:", err)
-        }
-    }
-
     onDestroy(() => {
-        if (attachedWebContentsId === null) return
-        send(OUTPUT, ["WEBSITE_DETACH"], { id: attachedKey, webContentsId: attachedWebContentsId })
+        if (claimedSrc && placeholder) releaseWebsite(claimedSrc, placeholder)
     })
+
+    // MAIN WINDOW
 
     // a preview of an active output never loads its own copy (that would be a separate, out of sync session)
     $: mirrorOutputId = !$currentWindow && outputId && $outputs[outputId]?.enabled ? outputId : ""
     $: mirrorKey = mirrorOutputId && parsedSrc ? getWebsiteKey(mirrorOutputId, parsedSrc) : ""
 
-    let hover = false
-    function mouseover() {
-        hover = true
-        checkNavigation()
-    }
-    function mouseleave() {
-        hover = false
+    // local website (e.g. when no output is active)
+    let webview: any
+    function initWebview(node: HTMLElement) {
+        node.addEventListener("dom-ready", setStyle)
+        node.addEventListener("did-finish-load", setStyle)
+
+        return {
+            destroy() {
+                node.removeEventListener("dom-ready", setStyle)
+                node.removeEventListener("did-finish-load", setStyle)
+            }
+        }
     }
 
-    let backDisabled = true
-    let forwardDisabled = true
-    function navigate(back = true) {
-        if (!webview || !webviewReady) return
+    $: if (webview && zoom !== undefined) setStyle()
+    function setStyle() {
+        if (!webview) return
 
         try {
-            if (back) webview.goBack()
-            else webview.goForward()
+            webview.setAudioMuted(true)
+            webview.setZoomFactor((parseFloat(zoom?.toString() || "100") || 100) / 100)
         } catch (err) {
-            console.debug("Webview navigation failed:", err)
+            console.debug("Failed to style webview:", err)
         }
-
-        setTimeout(checkNavigation)
-    }
-
-    function checkNavigation() {
-        if (!webviewReady || !webview) {
-            backDisabled = true
-            forwardDisabled = true
-            return
-        }
-
-        try {
-            backDisabled = !webview.canGoBack()
-            forwardDisabled = !webview.canGoForward()
-        } catch (err) {
-            console.debug("Webview navigation check failed:", err)
-        }
-    }
-
-    $: url = parsedSrc
-    function formatUrl(url: string) {
-        url = url.split("://")[1] || url
-        url = url.replace("www.", "")
-        if (url[url.length - 1] === "/") url = url.slice(0, -1)
-        return url
     }
 </script>
 
@@ -221,29 +67,18 @@
     <div class="iconPreview">
         <Icon id="web" size={3} white />
     </div>
+{:else if $currentWindow === "output"}
+    <div class="placeholder" bind:this={placeholder} />
 {:else if mirrorKey}
     <WebsiteMirror key={mirrorKey} />
-{:else}
-    <div class="website" class:clickable on:mouseover={mouseover} on:focus={mouseover} on:mouseleave={mouseleave}>
-        {#if navigation && hover && $currentWindow === "output"}
-            <div class="controls" style="zoom: {1 / ratio};">
-                {#if !backDisabled || !forwardDisabled}
-                    <Button on:click={() => navigate(true)} disabled={backDisabled}>
-                        <Icon id="back" white />
-                    </Button>
-                    <Button on:click={() => navigate(false)} disabled={forwardDisabled}>
-                        <Icon id="arrow_forward" white />
-                    </Button>
-                {/if}
-
-                <p class="url" style="zoom: {ratio};">{formatUrl(url)}</p>
-            </div>
-        {/if}
-        <webview id="webview" src={parsedSrc} partition="persist:websites" allowpopups bind:this={webview} use:initWebview />
+{:else if parsedSrc}
+    <div class="website">
+        <webview src={parsedSrc} partition="persist:websites" bind:this={webview} use:initWebview />
     </div>
 {/if}
 
 <style>
+    .placeholder,
     .website {
         position: absolute;
         width: 100%;
@@ -252,36 +87,9 @@
         pointer-events: none;
     }
 
-    .website.clickable {
-        pointer-events: initial;
-    }
-
     webview {
         width: 100%;
         height: 100%;
-    }
-
-    .controls {
-        z-index: 1;
-        position: absolute;
-        bottom: 0;
-        left: 0;
-
-        background-color: black;
-        border-start-end-radius: 3px;
-        display: flex;
-
-        opacity: 0.4;
-    }
-    .controls :global(button) {
-        padding: 2px 4px !important;
-    }
-
-    .url {
-        font-size: 0.15em;
-        display: flex;
-        align-items: center;
-        padding: 2px 10px;
     }
 
     .iconPreview {

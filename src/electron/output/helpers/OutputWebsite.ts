@@ -1,6 +1,6 @@
 // ----- FreeShow -----
 // Website items: the <webview> inside the output window is the ONE live browser instance.
-// The main window preview mirrors its frames and can forward mouse/keyboard input to it,
+// The main window preview mirrors its frames (instead of loading a second, out of sync copy),
 // so things like a Canva presentation (and its remote control) are driven in a single session.
 // Each live website is identified by a key: "outputId|url".
 
@@ -11,20 +11,15 @@ import { OUTPUT } from "../../../types/Channels"
 import { OutputHelper } from "../OutputHelper"
 
 const MIRROR_FPS = 15
-const MIRROR_WIDTH = 1280
+const MIRROR_WIDTH = 960
 const MIRROR_JPEG_QUALITY = 70
 
-const MOUSE_TYPES = ["mouseDown", "mouseUp", "mouseMove"]
-const KEY_TYPES = ["keyDown", "keyUp", "char"]
-const MOUSE_BUTTONS = ["left", "middle", "right"]
-const MODIFIERS = ["shift", "control", "alt", "meta"]
+const SLIDE_KEYS = ["Right", "Left"]
 
 interface AttachedWebsite {
     webContentsId: number
     generation: number
-    viewport: { width: number; height: number }
     frameInterval: NodeJS.Timeout | null
-    viewportInterval: NodeJS.Timeout | null
     capturing: boolean
     lastFrame: string | null
 }
@@ -88,7 +83,7 @@ export class OutputWebsite {
         if (previous) this.detach({ id, webContentsId: previous.webContentsId }, false)
 
         this.generation++
-        this.attached[id] = { webContentsId: contents.id, generation: this.generation, viewport: { width: 0, height: 0 }, frameInterval: null, viewportInterval: null, capturing: false, lastFrame: null }
+        this.attached[id] = { webContentsId: contents.id, generation: this.generation, frameInterval: null, capturing: false, lastFrame: null }
         contents.once("destroyed", () => this.detach({ id, webContentsId: contents.id }))
         contents.on("render-process-gone", () => this.detach({ id, webContentsId: contents.id }))
 
@@ -126,27 +121,22 @@ export class OutputWebsite {
         else this.stopFrames(id)
     }
 
-    // input positions are normalized (0-1) relative to the website
-    static input({ id, event }: { id: string; event: any }) {
-        const website = this.attached[id]
+    // a single key press (slide controls)
+    static key({ id, keyCode }: { id: string; keyCode: string }) {
         const contents = this.getContents(id)
-        if (!website || !contents) return
-
-        const inputEvent = validateInput(event, website.viewport)
-        if (!inputEvent) return
+        if (!contents || !SLIDE_KEYS.includes(keyCode)) return
 
         try {
-            contents.sendInputEvent(inputEvent)
+            contents.sendInputEvent({ type: "keyDown", keyCode })
+            contents.sendInputEvent({ type: "keyUp", keyCode })
         } catch (err) {
-            console.warn("Could not forward website input:", err)
+            console.warn("Could not send key to website:", err)
         }
     }
 
-    // a single key press (slide controls)
-    static key({ id, keyCode }: { id: string; keyCode: string }) {
-        if (!["Right", "Left"].includes(keyCode)) return
-        this.input({ id, event: { type: "keyDown", keyCode } })
-        this.input({ id, event: { type: "keyUp", keyCode } })
+    // "Refresh website"
+    static reload({ id }: { id: string }) {
+        this.getContents(id)?.reload()
     }
 
     // FRAMES
@@ -156,8 +146,6 @@ export class OutputWebsite {
         const website = this.attached[id]
         if (!website || website.frameInterval) return
 
-        this.updateViewport(id)
-        website.viewportInterval = setInterval(() => this.updateViewport(id), 2000)
         website.frameInterval = setInterval(() => this.captureFrame(id, website.generation), 1000 / MIRROR_FPS)
         this.captureFrame(id, website.generation)
     }
@@ -167,9 +155,7 @@ export class OutputWebsite {
         if (!website) return
 
         if (website.frameInterval) clearInterval(website.frameInterval)
-        if (website.viewportInterval) clearInterval(website.viewportInterval)
         website.frameInterval = null
-        website.viewportInterval = null
     }
 
     private static captureFrame(id: string, generation: number) {
@@ -197,23 +183,6 @@ export class OutputWebsite {
             .finally(() => {
                 website.capturing = false
             })
-    }
-
-    private static updateViewport(id: string) {
-        const website = this.attached[id]
-        const contents = this.getContents(id)
-        if (!website || !contents) return
-
-        const generation = website.generation
-        // sendInputEvent uses the page's view coordinates (CSS pixels * zoom factor)
-        contents
-            .executeJavaScript("[window.innerWidth, window.innerHeight]")
-            .then(([width, height]: number[]) => {
-                if (this.attached[id]?.generation !== generation) return
-                const zoom = contents.getZoomFactor() || 1
-                website.viewport = { width: width * zoom, height: height * zoom }
-            })
-            .catch(() => {})
     }
 
     // HELPERS
@@ -254,36 +223,6 @@ function isOutputWebview(contents: WebContents) {
     const host = contents.hostWebContents
     if (!host) return false
     return OutputHelper.getAllOutputs().some((output) => output.window && !output.window.isDestroyed() && output.window.webContents.id === host.id)
-}
-
-function validateInput(event: any, viewport: { width: number; height: number }): Electron.MouseInputEvent | Electron.MouseWheelInputEvent | Electron.KeyboardInputEvent | null {
-    if (!event || typeof event !== "object") return null
-    const modifiers = Array.isArray(event.modifiers) ? event.modifiers.filter((a: any) => MODIFIERS.includes(a)) : []
-
-    if (KEY_TYPES.includes(event.type)) {
-        if (typeof event.keyCode !== "string" || !event.keyCode || event.keyCode.length > 20) return null
-        return { type: event.type, keyCode: event.keyCode, modifiers }
-    }
-
-    if (!MOUSE_TYPES.includes(event.type) && event.type !== "mouseWheel") return null
-    if (!viewport.width || !viewport.height) return null
-    const x = Math.round(clamp(event.x) * viewport.width)
-    const y = Math.round(clamp(event.y) * viewport.height)
-
-    if (event.type === "mouseWheel") return { type: "mouseWheel", x, y, deltaX: finite(event.deltaX), deltaY: finite(event.deltaY), modifiers }
-
-    const button = MOUSE_BUTTONS.includes(event.button) ? event.button : undefined
-    const clickCount = Math.min(3, Math.max(1, Math.round(finite(event.clickCount) || 1)))
-    return { type: event.type, x, y, button, clickCount, modifiers }
-}
-
-function finite(value: any) {
-    const number = Number(value)
-    return Number.isFinite(number) ? number : 0
-}
-
-function clamp(value: number) {
-    return Math.min(1, Math.max(0, finite(value)))
 }
 
 function getCleanUserAgent(userAgent: string) {

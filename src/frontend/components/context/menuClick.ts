@@ -1856,14 +1856,10 @@ const clickActions = {
             return a
         })
     },
-    control_website: (obj: ObjData) => {
+    refresh_website: (obj: ObjData) => {
         const showId = get(activeShow)?.id
         if (!showId) return
-        const { liveKey } = getSlideWebsites(showId, obj.sel?.data?.[0]?.index)
-        if (!liveKey) return
-
-        popupData.set({ key: liveKey })
-        activePopup.set("control_website")
+        getSlideWebsites(showId, obj.sel?.data?.[0]?.index).liveKeys.forEach((key) => send(OUTPUT, ["WEBSITE_RELOAD"], { id: key }))
     },
     display_duration: () => {
         activePopup.set("display_duration")

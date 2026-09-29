@@ -154,15 +154,15 @@
                 // enabled = ref[$selected.data[0]?.index]?.data?.transition || false
             }
         },
-        control_website: () => {
+        refresh_website: () => {
             if ($selected.id !== "slide" || !$activeShow?.id) {
                 hide = true
                 return
             }
-            const { hasWebsite, liveKey } = getSlideWebsites($activeShow.id, $selected.data?.[0]?.index)
-            hide = !hasWebsite
-            // only possible while the website is live on an output
-            disabled = !liveKey
+            const { sources, liveKeys } = getSlideWebsites($activeShow.id, $selected.data?.[0]?.index)
+            hide = !sources.length
+            // only loaded while live on (or recently shown on) an output
+            disabled = !liveKeys.length
         },
         make_unique: () => {
             if ($selected.id !== "slide" || !$selected.data?.length) return

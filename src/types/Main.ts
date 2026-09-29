@@ -447,6 +447,7 @@ export type Popups =
     | "translate"
     | "next_timer"
     | "display_duration"
+    | "control_website"
     | "manage_tags"
     | "about"
     | "update_manager"

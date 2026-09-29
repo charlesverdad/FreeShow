@@ -222,7 +222,7 @@
         <Icon id="web" size={3} white />
     </div>
 {:else if mirrorKey}
-    <WebsiteMirror key={mirrorKey} {ratio} />
+    <WebsiteMirror key={mirrorKey} />
 {:else}
     <div class="website" class:clickable on:mouseover={mouseover} on:focus={mouseover} on:mouseleave={mouseleave}>
         {#if navigation && hover && $currentWindow === "output"}

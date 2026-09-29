@@ -3,7 +3,7 @@ import { OUTPUT } from "../../../types/Channels"
 import type { Item } from "../../../types/Show"
 import { outputs, overlays, showsCache, websiteMirrors } from "../../stores"
 import { send } from "../../utils/request"
-import { findSlideControlsWebsite, getWebsiteKey } from "../slide/views/websiteInput"
+import { findSlideControlsWebsite, formatWebsiteUrl, getWebsiteKey } from "../slide/views/websiteInput"
 import { _show } from "./shows"
 
 // Website items with "Send slide controls to website" enabled (e.g. a Canva presentation)
@@ -38,4 +38,16 @@ function getLiveItems(outputId: string): Item[] {
     ;(out.overlays || []).forEach((overlayId) => items.push(...(get(overlays)[overlayId]?.items || [])))
 
     return items
+}
+
+// "Control website" (slide context menu): the live website key of a website item on this slide, if any
+export function getSlideWebsites(showId: string, layoutIndex: number): { hasWebsite: boolean; liveKey: string } {
+    const ref = _show(showId).layouts("active").ref()[0] || []
+    const slideId = ref[layoutIndex]?.id
+    const items: Item[] = get(showsCache)[showId]?.slides?.[slideId]?.items || []
+    const sources = items.filter((item) => item.type === "web" && item.web?.src).map((item) => formatWebsiteUrl(item.web.src))
+    if (!sources.length) return { hasWebsite: false, liveKey: "" }
+
+    const liveKey = Object.entries(get(websiteMirrors)).find(([key, attached]) => attached && sources.some((src) => key.endsWith("|" + src)))?.[0] || ""
+    return { hasWebsite: true, liveKey }
 }

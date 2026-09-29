@@ -9,6 +9,7 @@
     import { getExtension, getMediaType } from "../helpers/media"
     import { getLayoutRef, getSlideHighlightIndexes } from "../helpers/show"
     import { _show } from "../helpers/shows"
+    import { getSlideWebsites } from "../helpers/websiteControls"
     import T from "../helpers/T.svelte"
     import { type ContextMenuItem, contextMenuItems } from "./contextMenus"
     import { menuClick } from "./menuClick"
@@ -152,6 +153,16 @@
                 // let ref = getLayoutRef()
                 // enabled = ref[$selected.data[0]?.index]?.data?.transition || false
             }
+        },
+        control_website: () => {
+            if ($selected.id !== "slide" || !$activeShow?.id) {
+                hide = true
+                return
+            }
+            const { hasWebsite, liveKey } = getSlideWebsites($activeShow.id, $selected.data?.[0]?.index)
+            hide = !hasWebsite
+            // only possible while the website is live on an output
+            disabled = !liveKey
         },
         make_unique: () => {
             if ($selected.id !== "slide" || !$selected.data?.length) return

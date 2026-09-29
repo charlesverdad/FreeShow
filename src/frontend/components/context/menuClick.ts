@@ -116,6 +116,7 @@ import { sendMidi } from "../helpers/showActions"
 import { _show } from "../helpers/shows"
 import { getMenuTagId, openTagManager, toggleSelectionTags, toggleTagFilter } from "../helpers/tags"
 import { clearSlide } from "../output/clear"
+import { getSlideWebsites } from "../helpers/websiteControls"
 import { defaultThemes } from "../settings/tabs/defaultThemes"
 import { activeProject } from "./../../stores"
 import type { ContextMenuItem } from "./contextMenus"
@@ -1854,6 +1855,15 @@ const clickActions = {
             })
             return a
         })
+    },
+    control_website: (obj: ObjData) => {
+        const showId = get(activeShow)?.id
+        if (!showId) return
+        const { liveKey } = getSlideWebsites(showId, obj.sel?.data?.[0]?.index)
+        if (!liveKey) return
+
+        popupData.set({ key: liveKey })
+        activePopup.set("control_website")
     },
     display_duration: () => {
         activePopup.set("display_duration")

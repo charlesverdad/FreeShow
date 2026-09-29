@@ -35,6 +35,7 @@ import CustomAction from "../components/main/popups/CustomAction.svelte"
 import CustomText from "../components/main/popups/CustomText.svelte"
 import DeleteDuplicatedShows from "../components/main/popups/DeleteDuplicatedShows.svelte"
 import DeleteShow from "../components/main/popups/DeleteShow.svelte"
+import ControlWebsite from "../components/main/popups/ControlWebsite.svelte"
 import DisplayDuration from "../components/main/popups/DisplayDuration.svelte"
 import DrawerSearchOptions from "../components/main/popups/DrawerSearchOptions.svelte"
 import DynamicValues from "../components/main/popups/DynamicValues.svelte"
@@ -155,6 +156,7 @@ export const popups: { [key in Popups]: ComponentType } = {
     translate: Translate,
     next_timer: NextTimer,
     display_duration: DisplayDuration,
+    control_website: ControlWebsite,
     manage_tags: ManageTags,
     about: About,
     update_manager: UpdateManager,

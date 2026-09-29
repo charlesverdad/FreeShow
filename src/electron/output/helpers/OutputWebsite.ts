@@ -11,7 +11,7 @@ import { OUTPUT } from "../../../types/Channels"
 import { OutputHelper } from "../OutputHelper"
 
 const MIRROR_FPS = 15
-const MIRROR_WIDTH = 960
+const MIRROR_WIDTH = 1280
 const MIRROR_JPEG_QUALITY = 70
 
 const MOUSE_TYPES = ["mouseDown", "mouseUp", "mouseMove"]

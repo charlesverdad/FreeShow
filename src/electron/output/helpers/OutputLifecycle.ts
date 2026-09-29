@@ -14,7 +14,7 @@ import { setDataOMT } from "../../omt/talk"
 import { wait } from "../../utils/helpers"
 import { outputOptions } from "../../utils/windowOptions"
 import { OutputHelper } from "../OutputHelper"
-import { setOutputAlwaysOnTop } from "./OutputAlwaysOnTop"
+import { setOutputAlwaysOnTop, setOutputVisibleOnFullscreenSpaces } from "./OutputAlwaysOnTop"
 import { OutputVisibility } from "./OutputVisibility"
 
 // Tracks timing stages for off-main GPU readback and transmission (in ms)
@@ -184,6 +184,9 @@ export class OutputLifecycle {
 
         window.setSkipTaskbar(!!options.skipTaskbar)
         if (isMac && !osr) window.minimize()
+
+        // set before the window is first shown, so macOS never assigns it to a single Space
+        if (!osr && extra.visibleOnFullscreenSpaces) setOutputVisibleOnFullscreenSpaces(window, true)
 
         window.once("show", () => {
             if (options.alwaysOnTop) setOutputAlwaysOnTop(window, true)

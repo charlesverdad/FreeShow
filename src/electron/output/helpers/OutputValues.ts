@@ -36,7 +36,8 @@ const setValues = {
         window.setSkipTaskbar(value)
         if (output.boundsLocked !== true) window.setResizable(!value)
     },
-    visibleOnFullscreenSpaces: (value: boolean, window: BrowserWindow) => {
+    visibleOnFullscreenSpaces: (value: boolean, window: BrowserWindow, _id: string, output: OutputWindow) => {
+        if (output.osr) return
         setOutputVisibleOnFullscreenSpaces(window, value)
     },
     boundsLocked: (value: boolean, _window: BrowserWindow, id: string, output: OutputWindow) => {

@@ -28,9 +28,10 @@ export function setOutputVisibleOnFullscreenSpaces(window: BrowserWindow, value:
     if (process.platform !== "darwin" || window.isDestroyed()) return
 
     try {
+        // setVisibleOnAllWorkspaces can reset the window level, so restore always on top afterwards
+        const alwaysOnTop = window.isAlwaysOnTop()
         window.setVisibleOnAllWorkspaces(value, { visibleOnFullScreen: value })
-        // setVisibleOnAllWorkspaces resets the level, so reapply always on top
-        if (window.isAlwaysOnTop()) setOutputAlwaysOnTop(window, true)
+        if (alwaysOnTop) setOutputAlwaysOnTop(window, true)
     } catch (err) {
         console.warn("Failed to set visible on fullscreen spaces:", err)
     }

@@ -183,10 +183,9 @@ export class OutputLifecycle {
         if (osr) this.attachOsrCapture(window, id)
 
         window.setSkipTaskbar(!!options.skipTaskbar)
-        if (isMac && !osr) window.minimize()
-
-        // set before the window is first shown, so macOS never assigns it to a single Space
+        // set before the window is first minimized/shown, so macOS never assigns it to a single Space
         if (!osr && extra.visibleOnFullscreenSpaces) setOutputVisibleOnFullscreenSpaces(window, true)
+        if (isMac && !osr) window.minimize()
 
         window.once("show", () => {
             if (options.alwaysOnTop) setOutputAlwaysOnTop(window, true)

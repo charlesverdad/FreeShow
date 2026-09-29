@@ -17,6 +17,7 @@ import { receiveMain, sendMain, sendToMain } from "./IPC/main"
 import { autoErrorReport } from "./IPC/responsesMain"
 import { receiveNDI } from "./ndi/talk"
 import { receiveOMT } from "./omt/talk"
+import { OutputWebsite } from "./output/helpers/OutputWebsite"
 import { OutputHelper } from "./output/OutputHelper"
 import { setRtmpNoticeListener, setRtmpStatusListener } from "./streaming/RtmpStreamer"
 import { callClose, exitApp, saveAndClose } from "./utils/close"
@@ -369,11 +370,16 @@ app.on("will-quit", () => {
     if (isMac) app.exit()
 })
 
+OutputWebsite.cleanUserAgent()
 app.on("web-contents-created", (_e, contents) => {
     contents.on("will-attach-webview", (_event, webPreferences) => {
         // remove unused preload scripts
         delete webPreferences.preload
+        // website "fullscreen" (e.g. presenting) should fill the item, not make the whole window a native fullscreen window
+        webPreferences.disableHtmlFullscreenWindowResize = true
     })
+
+    if (contents.getType() === "webview") OutputWebsite.setupGuest(contents)
 })
 
 // handle graceful shutdown on SIGINT (e.g. Ctrl+C)

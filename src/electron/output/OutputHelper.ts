@@ -10,6 +10,7 @@ import { OutputLifecycle } from "./helpers/OutputLifecycle"
 import { OutputSend } from "./helpers/OutputSend"
 import { OutputValues } from "./helpers/OutputValues"
 import { OutputVisibility } from "./helpers/OutputVisibility"
+import { OutputWebsite } from "./helpers/OutputWebsite"
 import type { Output as OutputData } from "./Output"
 
 export class OutputHelper {
@@ -36,7 +37,12 @@ export class OutputHelper {
             IDENTIFY_SCREENS: (data: { bounds: Rectangle }[]) => OutputHelper.Identify.identifyScreens(data),
             // PREVIEW_BOUNDS: (data) => OutputHelper.Bounds.setPreviewBounds(data),
 
-            FOCUS: (data: { id: string }) => OutputHelper.Lifecycle.focusOutput(data.id)
+            FOCUS: (data: { id: string }) => OutputHelper.Lifecycle.focusOutput(data.id),
+
+            WEBSITE_ATTACH: (data: { id: string; webContentsId: number }) => OutputWebsite.attach(data),
+            WEBSITE_DETACH: (data: { id: string; webContentsId?: number }) => OutputWebsite.detach(data),
+            WEBSITE_MIRROR: (data: { id: string; enabled: boolean }) => OutputWebsite.mirror(data),
+            WEBSITE_INPUT: (data: { id: string; event: any }) => OutputWebsite.input(data)
         }
 
         if (msg.channel.includes("MAIN")) return toApp(OUTPUT, msg)

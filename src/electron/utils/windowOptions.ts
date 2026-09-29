@@ -34,6 +34,7 @@ export const mainOptions: BrowserWindowConstructorOptions = {
         contextIsolation: true,
         allowRunningInsecureContent: false,
         webviewTag: true, // website item
+        disableHtmlFullscreenWindowResize: true, // website item fullscreen should stay inside the item
         backgroundThrottling: false, // allow "timers" to run in background
         autoplayPolicy: "no-user-gesture-required" // API-triggered playback (e.g. Stream Deck) has no user gesture
     }
@@ -65,6 +66,7 @@ export const outputOptions: BrowserWindowConstructorOptions = {
         contextIsolation: true,
         allowRunningInsecureContent: false,
         webviewTag: true,
+        disableHtmlFullscreenWindowResize: true,
         backgroundThrottling: false,
         autoplayPolicy: "no-user-gesture-required"
     }

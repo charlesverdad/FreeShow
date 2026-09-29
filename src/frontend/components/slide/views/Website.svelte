@@ -1,15 +1,18 @@
 <script lang="ts">
+    import { onDestroy } from "svelte"
     import { OUTPUT } from "../../../../types/Channels"
-    import { currentWindow, outputs } from "../../../stores"
+    import { currentWindow, outputs, websiteMirrors } from "../../../stores"
     import { send } from "../../../utils/request"
     import Icon from "../../helpers/Icon.svelte"
     import Button from "../../inputs/Button.svelte"
+    import WebsiteMirror from "./WebsiteMirror.svelte"
 
     export let src: string
     export let navigation = true
     export let zoom: number | undefined = undefined
     export let clickable = false
     export let disablePreview = false
+    export let outputId = ""
 
     let webview: any
     export let ratio: number
@@ -33,6 +36,7 @@
 
     function onDomReady() {
         webviewReady = true
+        attachToOutput()
         websiteLoaded()
         checkNavigation()
         setStyle()
@@ -145,6 +149,52 @@
         })
     }
 
+    // LIVE INSTANCE
+
+    // the website in the output window is the one live browser instance,
+    // main window previews of that output mirror it instead of loading their own copy
+    $: liveOutputId = $currentWindow === "output" ? outputId || Object.keys($outputs)[0] || "" : ""
+
+    let attachedWebContentsId: number | null = null
+    function attachToOutput() {
+        if (!liveOutputId || !webview) return
+
+        try {
+            const webContentsId = webview.getWebContentsId()
+            if (webContentsId === attachedWebContentsId) return
+            attachedWebContentsId = webContentsId
+            send(OUTPUT, ["WEBSITE_ATTACH"], { id: liveOutputId, webContentsId })
+        } catch (err) {
+            console.debug("Could not attach website:", err)
+        }
+    }
+
+    onDestroy(() => {
+        if (attachedWebContentsId === null) return
+        send(OUTPUT, ["WEBSITE_DETACH"], { id: liveOutputId, webContentsId: attachedWebContentsId })
+    })
+
+    $: mirrorOutputId = !$currentWindow && outputId && $outputs[outputId]?.enabled ? outputId : ""
+    $: mirrorAttached = !!(mirrorOutputId && $websiteMirrors[mirrorOutputId]?.attached)
+
+    // fall back to a local website if the output has no live website (e.g. output content is not rendered)
+    let mirrorTimedOut = false
+    let mirrorTimeout: NodeJS.Timeout | null = null
+    $: if (mirrorOutputId && !mirrorAttached) startMirrorTimeout()
+    $: if (mirrorAttached) mirrorTimedOut = false
+    function startMirrorTimeout() {
+        if (mirrorTimeout) clearTimeout(mirrorTimeout)
+        mirrorTimeout = setTimeout(() => {
+            mirrorTimeout = null
+            if (!mirrorAttached) mirrorTimedOut = true
+        }, 5000)
+    }
+    onDestroy(() => {
+        if (mirrorTimeout) clearTimeout(mirrorTimeout)
+    })
+
+    $: useMirror = !!mirrorOutputId && (mirrorAttached || !mirrorTimedOut)
+
     let hover = false
     function mouseover() {
         hover = true
@@ -197,6 +247,8 @@
     <div class="iconPreview">
         <Icon id="web" size={3} white />
     </div>
+{:else if useMirror}
+    <WebsiteMirror outputId={mirrorOutputId} {ratio} />
 {:else}
     <div class="website" class:clickable on:mouseover={mouseover} on:focus={mouseover} on:mouseleave={mouseleave}>
         {#if navigation && hover && $currentWindow === "output"}
@@ -213,7 +265,7 @@
                 <p class="url" style="zoom: {ratio};">{formatUrl(url)}</p>
             </div>
         {/if}
-        <webview id="webview" src={parsedSrc} bind:this={webview} use:initWebview />
+        <webview id="webview" src={parsedSrc} allowpopups bind:this={webview} use:initWebview />
     </div>
 {/if}
 

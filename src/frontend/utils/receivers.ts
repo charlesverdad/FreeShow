@@ -62,7 +62,8 @@ import {
     timers,
     transitionData,
     variables,
-    visualizerData
+    visualizerData,
+    websiteMirrors
 } from "../stores"
 import { newToast } from "./common"
 import { syncDrive } from "./drive"
@@ -113,6 +114,19 @@ const receiveOUTPUTasMAIN: any = {
         })
     },
     OUTPUTS: (a: any) => outputs.set(a),
+    WEBSITE_STATE: ({ id, attached }: { id: string; attached: boolean }) => {
+        websiteMirrors.update((a) => {
+            a[id] = { ...(a[id] || {}), attached }
+            if (!attached) delete a[id].frame
+            return a
+        })
+    },
+    WEBSITE_FRAME: ({ id, frame }: { id: string; frame: string }) => {
+        websiteMirrors.update((a) => {
+            a[id] = { ...(a[id] || {}), attached: true, frame }
+            return a
+        })
+    },
     RESTART: ({ id }) => restartOutputs(id),
     // DISPLAY: (a: any) => outputDisplay.set(a.enabled),
     OUTPUT_STATE: (newStates: { id: string; active: boolean | "invisible" }[]) => {

@@ -6,6 +6,26 @@ export function getWebsiteKey(outputId: string, src: string) {
     return outputId + "|" + src
 }
 
+// same formatting as the website item uses for its url
+export function formatWebsiteUrl(src: string) {
+    if (!src) return ""
+    src = src.replaceAll("&amp;", "&").replaceAll("{", "%7B").replaceAll("}", "%7D")
+    if (!src.includes("://")) src = "http://" + src
+
+    try {
+        new URL(src)
+        return src
+    } catch {
+        return ""
+    }
+}
+
+// the (formatted) url of a website item that should receive slide controls
+export function findSlideControlsWebsite(items: { type?: string; web?: { src?: string; slideControls?: boolean } }[]) {
+    const item = items.find((a) => a?.type === "web" && a.web?.slideControls && a.web?.src)
+    return item ? formatWebsiteUrl(item.web!.src!) : ""
+}
+
 type Modifiers = { shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }
 
 export type WebsiteInputEvent = { type: "mouseDown" | "mouseUp" | "mouseMove"; x: number; y: number; button?: "left" | "middle" | "right"; clickCount?: number; modifiers?: string[] } | { type: "mouseWheel"; x: number; y: number; deltaX: number; deltaY: number; modifiers?: string[] } | { type: "keyDown" | "keyUp" | "char"; keyCode: string; modifiers?: string[] }

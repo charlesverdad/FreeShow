@@ -142,6 +142,13 @@ export class OutputWebsite {
         }
     }
 
+    // a single key press (slide controls)
+    static key({ id, keyCode }: { id: string; keyCode: string }) {
+        if (!["Right", "Left"].includes(keyCode)) return
+        this.input({ id, event: { type: "keyDown", keyCode } })
+        this.input({ id, event: { type: "keyUp", keyCode } })
+    }
+
     // FRAMES
 
     // poll at MIRROR_FPS (instead of reading back every painted frame of e.g. a video)

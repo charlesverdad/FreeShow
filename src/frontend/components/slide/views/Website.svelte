@@ -6,7 +6,7 @@
     import Icon from "../../helpers/Icon.svelte"
     import Button from "../../inputs/Button.svelte"
     import WebsiteMirror from "./WebsiteMirror.svelte"
-    import { getWebsiteKey } from "./websiteInput"
+    import { formatWebsiteUrl, getWebsiteKey } from "./websiteInput"
 
     export let src: string
     export let navigation = true
@@ -60,20 +60,7 @@
     $: if (src) checkURL()
 
     function checkURL() {
-        let valid = false
-
-        // format url
-        src = src.replaceAll("&amp;", "&").replaceAll("{", "%7B").replaceAll("}", "%7D")
-        if (!src.includes("://")) src = "http://" + src
-
-        try {
-            new URL(src)
-            valid = true
-        } catch (err) {
-            console.error(err)
-        }
-
-        parsedSrc = valid ? src : ""
+        parsedSrc = formatWebsiteUrl(src)
     }
 
     $: if (parsedSrc && parsedSrc !== prevSrc) {

@@ -4,7 +4,7 @@ import { CaptureHelper } from "../../capture/CaptureHelper"
 import type { Output as OutputWindow } from "../Output"
 import { OutputHelper } from "../OutputHelper"
 import type { Output } from "../../../types/Output"
-import { setOutputAlwaysOnTop, setOutputOnAllSpaces } from "./OutputAlwaysOnTop"
+import { setOutputAlwaysOnTop } from "./OutputAlwaysOnTop"
 
 // SET_VALUE handles only values that can change on a LIVE window. Keys that affect window creation
 // (transparent/invisible) or the window's offscreen (OSR) mode (the persistent ndi/webrtc/rtmp/blackmagic
@@ -31,7 +31,6 @@ const setValues = {
         CaptureHelper.Lifecycle.startCapture(id, { [data.key]: data.value })
     },
     alwaysOnTop: (value: boolean, window: BrowserWindow, _id: string, output: OutputWindow) => {
-        if (!output.osr) setOutputOnAllSpaces(window, value)
         setOutputAlwaysOnTop(window, value)
         // show in taskbar if not always on top, because this will also show it in Alt+Tab menu
         window.setSkipTaskbar(value)

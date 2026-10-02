@@ -20,6 +20,15 @@ export function setOutputAlwaysOnTop(window: BrowserWindow, value: boolean) {
     }
 }
 
+// macOS only: by default a window belongs to a single Space, so showing the output while another app
+// (e.g. a browser presenting a Canva deck) is fullscreen on the same display makes macOS switch to the
+// desktop Space, and hiding it again leaves the user there instead of returning to the fullscreen app.
+// Always on top outputs are created as panels, which join all Spaces (including fullscreen ones), so they simply
+// cover/uncover whatever is below. (setVisibleOnAllWorkspaces would also hide the app's Dock icon to do this.)
+export function useOutputPanel(alwaysOnTop: boolean | undefined, osr: boolean) {
+    return process.platform === "darwin" && !!alwaysOnTop && !osr
+}
+
 // Windows only: use a helper executable to exclude the window from "Aero Peek" via DWM
 // this prevents the output from being hidden when the user peeks at the taskbar
 function setExcludedFromAeroPeek(handle: Buffer, state: boolean) {

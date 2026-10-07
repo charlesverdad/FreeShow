@@ -14,7 +14,7 @@ import { requestMain, sendMain } from "../../IPC/main"
 import { isMainWindow, isOutputWindow } from "../../utils/common"
 import { send } from "../../utils/request"
 import { convertRSSToString, getRSS } from "../../utils/rss"
-import { runAction, slideHasAction } from "../actions/actions"
+import { keyHasAction, runAction, slideHasAction } from "../actions/actions"
 import type { API_output_style } from "../actions/api"
 import { getInteraction } from "../drawer/pages/interactions"
 import { getCurrentTimerValue, getTimeUntilClock, playPauseGlobal } from "../drawer/timers/timers"
@@ -26,6 +26,7 @@ import {
     activeFocus,
     activeInteractions,
     activePage,
+    activePopup,
     activeProject,
     activeShow,
     allOutputs,
@@ -91,6 +92,8 @@ export function checkInput(e: any) {
 
     if (!["ArrowDown", "ArrowUp"].includes(e.key)) return
     if (get(activeProject) === null) return
+    if (get(activePopup) === "assign_shortcut") return
+    if (!e.altKey && !e.shiftKey && keyHasAction(e.key)) return
     e.preventDefault()
     ;(document.activeElement as any)?.blur()
 

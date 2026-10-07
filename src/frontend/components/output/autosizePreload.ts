@@ -4,6 +4,7 @@ import { getItemText } from "../edit/scripts/textStyle"
 import { clone } from "../helpers/array"
 import { itemHasAutoSize, setTemplateStyle } from "../helpers/output"
 import { showsCache } from "../../stores"
+import { getExtension, getMediaType } from "../helpers/media"
 import { _show } from "../helpers/shows"
 
 export type AutoSizeTarget = { item: Item; index: number; key: string; slideId: string; showId: string; layoutId: string }
@@ -49,4 +50,26 @@ export function buildPreloadQueue(shows: PreloadShow[], skip: { showId: string; 
     })
 
     return targets
+}
+
+// image background paths of the same slides as the text queue, plus the current slide
+export function getPreloadBackgroundPaths(shows: PreloadShow[], current?: { showId: string; index: number }) {
+    const paths = new Set<string>()
+
+    shows.forEach(({ showId, layoutId, first = [], onlyFirst }) => {
+        if (!get(showsCache)[showId]) return
+        const layoutRefs: any[] = _show(showId).layouts([layoutId]).ref()[0] || []
+        const showMedia = _show(showId).get("media") || {}
+
+        const order = onlyFirst ? [...first] : [...first, ...layoutRefs.map((_a, i) => i)]
+        if (current?.showId === showId) order.push(current.index)
+
+        order.forEach((i) => {
+            const bg = layoutRefs[i]?.data?.background
+            const path: string = showMedia[bg || ""]?.path || showMedia[bg || ""]?.id || ""
+            if (path && getMediaType(getExtension(path)) === "image") paths.add(path)
+        })
+    })
+
+    return [...paths]
 }

@@ -4,6 +4,8 @@ import { AudioPlayer } from "../audio/audioPlayer"
 import { midiInListen } from "../components/actions/midi"
 import { getAllActiveOutputIds, getAllNormalOutputs, updateSyncedOutputs } from "../components/helpers/output"
 import { loadShows } from "../components/helpers/setShow"
+import { _show } from "../components/helpers/shows"
+import { warmBackgroundPaths } from "../components/helpers/showActions"
 import { getShowCacheId, syncCachedShows, updateCachedShow, updateCachedShows, updateShowsList } from "../components/helpers/show"
 import {
     $,
@@ -73,8 +75,17 @@ import { arrayToObject, eachConnection, filterObjectArray, sendData, timedout } 
 // output text size preload (whole project) needs the project shows loaded
 function loadProjectShowsForPreload() {
     if (get(special).textSizePreload !== "project") return
-    const showIds = (get(projects)[get(activeProject) || ""]?.shows || []).filter((a) => (a.type || "show") === "show").map((a) => a.id)
-    if (showIds.length) loadShows(showIds)
+    const projectShows = (get(projects)[get(activeProject) || ""]?.shows || []).filter((a) => (a.type || "show") === "show")
+    if (!projectShows.length) return
+
+    // also resolve all backgrounds (output preloads the images)
+    loadShows(projectShows.map((a) => a.id)).then(() => {
+        projectShows.forEach((a) => {
+            const layoutId = a.layout || get(showsCache)[a.id]?.settings?.activeLayout || ""
+            const layout = get(showsCache)[a.id] ? _show(a.id).layouts([layoutId]).ref()[0] : null
+            if (layout) warmBackgroundPaths(a.id, layout)
+        })
+    })
 }
 
 export function storeSubscriber() {

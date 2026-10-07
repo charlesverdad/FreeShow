@@ -85,7 +85,7 @@
         }
 
         const hasActiveBg = !!(background1 || background2)
-        const mountDelay = hasActiveBg ? duration / 4 + 20 : 0
+        const mountDelay = hasActiveBg && !noTransition ? duration / 4 + 20 : 0
         timeout = setTimeout(() => {
             loading = true
             let loadingFirst = !background1 // && background2?.path ? background2?.path !== data.path : background2?.id !== data.id

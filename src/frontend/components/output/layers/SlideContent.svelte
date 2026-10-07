@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
     import type { Item, OutSlide, SlideData, TimelineAction } from "../../../../types/Show"
-    import { currentWindow, scriptureSettings, showsCache, slideTimelineSpeedMultiplier, templates } from "../../../stores"
+    import { activeProject, currentWindow, projects, scriptureSettings, showsCache, special, slideTimelineSpeedMultiplier, templates } from "../../../stores"
     import { waitUntilValueIsDefined } from "../../../utils/common"
     import { shouldItemBeShown } from "../../edit/scripts/itemHelpers"
     import { getItemText } from "../../edit/scripts/textStyle"
@@ -9,7 +9,8 @@
     import { loadCustomFonts } from "../../helpers/fonts"
     import { getStyleTemplate, itemHasAutoSize, itemNeedsAutoSize, slideHasAutoSizeItem } from "../../helpers/output"
     import { buildPreloadQueue, canProbeAutoSize, createAutoSizeKey } from "../autosizePreload"
-    import type { AutoSizeTarget } from "../autosizePreload"
+    import type { AutoSizeTarget, PreloadShow } from "../autosizePreload"
+    import { getAutoSizeCacheStats } from "../../slide/autosizeCache"
     import Textbox from "../../slide/Textbox.svelte"
     import { SlideTimeline } from "../../timeline/SlideTimeline"
     import SlideItemTransition from "../transitions/SlideItemTransition.svelte"
@@ -151,7 +152,7 @@
             const key = createAutoSizeKey(slideId, item, index)
 
             pendingKeys.add(key)
-            targets.push({ item: clone(item), index, key, slideId })
+            targets.push({ item: clone(item), index, key, slideId, showId: outSlide?.id, layoutId: outSlide?.layout || "" })
         })
 
         precomputeTargets = targets
@@ -356,7 +357,7 @@
         if (!stats.keys.size) pushStats()
     }
 
-    // BACKGROUND PRELOAD (output window): warm the autosize cache for the other slides of the layout
+    // BACKGROUND PRELOAD (output window): warm the autosize cache for the other slides (see settings: special.textSizePreload)
     let preloadMounted: AutoSizeTarget[] = []
     let preloadQueue: AutoSizeTarget[] = []
     let preloadGeneration = 0
@@ -365,15 +366,27 @@
     let preloadTimers = new Map<string, NodeJS.Timeout>()
     const preloaded = new Set<string>()
 
-    $: if (!preview && $currentWindow === "output" && outSlide?.id && outSlide.id !== "temp" && outSlide.id !== "tempText") schedulePreload(outSlide, currentStyle)
-    function schedulePreload(out: OutSlide, style: any) {
-        // reset when the show, layout or style changes
-        const signature = `${out.id}:${out.layout}:${ratio}:${styleIdOverride}:${JSON.stringify(style)}`
+    $: preloadMode = $special.textSizePreload || "upcoming"
+
+    // project data changes (debounced)
+    let projectVersion = 0
+    let projectTimer: NodeJS.Timeout | null = null
+    $: bumpProjectVersion(preloadMode, $activeProject, $projects, $showsCache)
+    function bumpProjectVersion(mode: string, ..._deps: any[]) {
+        if (projectTimer) clearTimeout(projectTimer)
+        if (mode !== "project") return
+        projectTimer = setTimeout(() => projectVersion++, 500)
+    }
+
+    $: if (!preview && $currentWindow === "output" && outSlide?.id && outSlide.id !== "temp" && outSlide.id !== "tempText") schedulePreload(outSlide, currentStyle, preloadMode, ratio, styleIdOverride, projectVersion)
+    function schedulePreload(out: OutSlide, style: any, mode: string, size: number, styleOverride: string, version: number) {
+        // reset when the output size or style changes (upcoming also when the show changes)
+        const signature = `${mode}:${size}:${styleOverride}:${JSON.stringify(style)}${mode === "project" ? "" : `:${out.id}:${out.layout}`}`
         if (signature !== preloadSignature) preloaded.clear()
         preloadSignature = signature
 
-        // line changes etc. do not need a new queue
-        const scheduled = `${signature}:${out.index}`
+        // slide changes do not need a new queue in project mode, and line changes etc. never do
+        const scheduled = `${signature}:${out.id}:${out.layout}:${mode === "project" ? version : out.index}`
         if (scheduled === preloadScheduled) return
         preloadScheduled = scheduled
 
@@ -382,6 +395,8 @@
         preloadTimers.clear()
         preloadMounted = []
         preloadQueue = []
+        setPreloadStats(mode, 0)
+        if (mode === "off") return
 
         const start = (tries = 0) => {
             if (gen !== preloadGeneration) return
@@ -391,14 +406,49 @@
                 return
             }
 
-            preloadQueue = buildPreloadQueue(out, style, outputId).filter((target) => !preloaded.has(preloadId(target)))
+            const current = out.index ?? 0
+            const shows = mode === "project" ? getProjectShows(out) : [{ showId: out.id, layoutId: out.layout || "", first: [current + 1, current + 2], onlyFirst: true }]
+            preloadQueue = buildPreloadQueue(shows, { showId: out.id, index: current }, style, outputId).filter((target) => !preloaded.has(preloadId(target)))
+            setPreloadStats(mode, preloadQueue.length)
             pumpPreload(gen)
         }
         if (typeof requestIdleCallback === "function") requestIdleCallback(() => start(), { timeout: 500 })
         else setTimeout(() => start(), 50)
     }
 
+    // the outputted show first, then every show in the active project
+    function getProjectShows(out: OutSlide): PreloadShow[] {
+        const current = out.index ?? 0
+        const shows: PreloadShow[] = [{ showId: out.id, layoutId: out.layout || "", first: [current + 1, current + 2, current - 1] }]
+        ;($projects[$activeProject || ""]?.shows || []).forEach((item) => {
+            if (item.type && item.type !== "show") return
+            const layoutId = item.layout || $showsCache[item.id]?.settings?.activeLayout || ""
+            if (!shows.some((a) => a.showId === item.id && a.layoutId === layoutId)) shows.push({ showId: item.id, layoutId })
+        })
+        // the current show is already first
+        return shows.filter((a, i) => i === 0 || a.showId !== out.id || a.layoutId !== out.layout)
+    }
+
     const preloadId = (target: AutoSizeTarget) => `${target.key}|${JSON.stringify(target.item)}|${preloadSignature}`
+    const probeId = (target: AutoSizeTarget) => `${target.showId}|${target.key}`
+
+    // DEBUG (output window): progress of the current preload run
+    function setPreloadStats(mode: string, queued: number) {
+        if (preview || $currentWindow !== "output") return
+        ;(window as any).__autosizePreload = {
+            mode,
+            queued,
+            done: 0,
+            finishedAt: 0,
+            get cache() {
+                return getAutoSizeCacheStats()
+            }
+        }
+    }
+    function addPreloadDone() {
+        const stats = (window as any).__autosizePreload
+        if (stats && !preview && $currentWindow === "output") stats.done++
+    }
 
     // mount up to 4 probes at a time
     function pumpPreload(gen: number) {
@@ -407,22 +457,29 @@
             const target = preloadQueue.shift()!
             preloadMounted = [...preloadMounted, target]
             preloadTimers.set(
-                target.key,
-                setTimeout(() => finishPreload(target.key, gen), 1500)
+                probeId(target),
+                setTimeout(() => finishPreload(target, gen), 1500)
             )
         }
+        const stats = (window as any).__autosizePreload
+        if (stats && !preloadQueue.length && !preloadMounted.length && !stats.finishedAt) stats.finishedAt = Date.now()
     }
-    function finishPreload(key: string, gen: number) {
-        if (gen !== preloadGeneration) return
-        clearTimeout(preloadTimers.get(key))
-        preloadTimers.delete(key)
-        preloadMounted = preloadMounted.filter((a) => a.key !== key)
-        pumpPreload(gen)
+    function finishPreload(target: AutoSizeTarget | undefined, gen: number) {
+        if (!target || gen !== preloadGeneration) return
+        if (!preloadMounted.includes(target)) return
+        clearTimeout(preloadTimers.get(probeId(target)))
+        preloadTimers.delete(probeId(target))
+        preloadMounted = preloadMounted.filter((a) => a !== target)
+        addPreloadDone()
+        // give the main thread a break between batches
+        if (preloadMounted.length || typeof requestIdleCallback !== "function") pumpPreload(gen)
+        else requestIdleCallback(() => pumpPreload(gen), { timeout: 200 })
     }
     function handlePreloadReady(event: CustomEvent<{ key: string }>) {
         const target = preloadMounted.find((a) => a.key === event.detail?.key)
-        if (target) preloaded.add(preloadId(target))
-        finishPreload(event.detail?.key, preloadGeneration)
+        if (!target) return
+        preloaded.add(preloadId(target))
+        finishPreload(target, preloadGeneration)
     }
     onDestroy(() => {
         preloadGeneration++
@@ -581,8 +638,8 @@
         {#each precomputeTargets as target (target.key)}
             <Textbox item={target.item} {ratio} {outputId} outputStyle={currentStyle} {mirror} {preview} {styleIdOverride} ref={{ type: "show", showId: outSlide?.id, slideId: target.slideId, id: target.slideId, layoutId: outSlide?.layout }} autoSizeKey={target.key} on:autosizeReady={handlePrecomputeReady} updateDynamicValues={!isClearing} />
         {/each}
-        {#each preloadMounted as target (target.key)}
-            <Textbox item={target.item} {ratio} {outputId} outputStyle={currentStyle} {mirror} {preview} {styleIdOverride} ref={{ type: "show", showId: outSlide?.id, slideId: target.slideId, id: target.slideId, layoutId: outSlide?.layout }} autoSizeKey={target.key} on:autosizeReady={handlePreloadReady} updateDynamicValues={false} />
+        {#each preloadMounted as target (probeId(target))}
+            <Textbox item={target.item} {ratio} {outputId} outputStyle={currentStyle} {mirror} {preview} {styleIdOverride} ref={{ type: "show", showId: target.showId, slideId: target.slideId, id: target.slideId, layoutId: target.layoutId }} autoSizeKey={target.key} on:autosizeReady={handlePreloadReady} updateDynamicValues={false} />
         {/each}
     </div>
 {/if}

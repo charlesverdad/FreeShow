@@ -1,5 +1,7 @@
 <script lang="ts">
-    import { autoOutput, os, special } from "../../../stores"
+    import { autoOutput, dictionary, os, special } from "../../../stores"
+    import { translateText } from "../../../utils/language"
+    import MaterialDropdown from "../../inputs/MaterialDropdown.svelte"
     import MaterialToggleSwitch from "../../inputs/MaterialToggleSwitch.svelte"
     import Tip from "../../main/Tip.svelte"
 
@@ -11,6 +13,12 @@
             return a
         })
     }
+
+    $: textSizePreloadOptions = [
+        { value: "off", label: translateText("settings.text_size_preload_off", $dictionary) },
+        { value: "upcoming", label: translateText("settings.text_size_preload_upcoming", $dictionary) },
+        { value: "project", label: translateText("settings.text_size_preload_project", $dictionary) }
+    ]
 </script>
 
 <Tip type="info" value="tips.global_options" bottom={20} />
@@ -20,3 +28,5 @@
 {#if $os.platform !== "darwin" || $special.hideCursor}
     <MaterialToggleSwitch label="settings.hide_cursor_in_output" checked={$special.hideCursor} defaultValue={false} on:change={(e) => updateSpecial(e.detail, "hideCursor")} />
 {/if}
+
+<MaterialDropdown label="settings.text_size_preload" options={textSizePreloadOptions} value={$special.textSizePreload || "upcoming"} on:change={(e) => updateSpecial(e.detail === "upcoming" ? "" : e.detail, "textSizePreload")} />

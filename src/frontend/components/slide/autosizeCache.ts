@@ -22,3 +22,10 @@ export function clearAutoSizeCache(key?: string) {
     }
     autoSizeCache.delete(key)
 }
+
+// debug: rough size of the cache
+export function getAutoSizeCacheStats() {
+    let bytes = 0
+    autoSizeCache.forEach((entry, key) => (bytes += (key.length + entry.signature.length) * 2 + 16))
+    return { entries: autoSizeCache.size, bytes }
+}

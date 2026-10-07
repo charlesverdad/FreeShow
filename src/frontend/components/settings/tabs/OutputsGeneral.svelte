@@ -20,3 +20,5 @@
 {#if $os.platform !== "darwin" || $special.hideCursor}
     <MaterialToggleSwitch label="settings.hide_cursor_in_output" checked={$special.hideCursor} defaultValue={false} on:change={(e) => updateSpecial(e.detail, "hideCursor")} />
 {/if}
+
+<MaterialToggleSwitch label="settings.text_size_preload_project" checked={$special.textSizePreload === "project"} defaultValue={false} on:change={(e) => updateSpecial(e.detail ? "project" : "", "textSizePreload")} />

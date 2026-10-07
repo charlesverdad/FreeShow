@@ -70,6 +70,13 @@ import { convertBackgrounds, getFilteredAudioChannels } from "./remoteTalk"
 import { send } from "./request"
 import { arrayToObject, eachConnection, filterObjectArray, sendData, timedout } from "./sendData"
 
+// output text size preload (whole project) needs the project shows loaded
+function loadProjectShowsForPreload() {
+    if (get(special).textSizePreload !== "project") return
+    const showIds = (get(projects)[get(activeProject) || ""]?.shows || []).filter((a) => (a.type || "show") === "show").map((a) => a.id)
+    if (showIds.length) loadShows(showIds)
+}
+
 export function storeSubscriber() {
     shows.subscribe(async (data) => {
         if (await hasNewerUpdate("LISTENER_SHOWS", 800)) return
@@ -337,6 +344,7 @@ export function storeSubscriber() {
 
     special.subscribe((data) => {
         send(OUTPUT, ["SPECIAL"], data)
+        loadProjectShowsForPreload()
     })
 
     slideTimelineSpeedMultiplier.subscribe((data) => {
@@ -375,6 +383,8 @@ export function storeSubscriber() {
 
         // dynamic values
         send(OUTPUT, ["PROJECTS"], a)
+
+        loadProjectShowsForPreload()
     })
     folders.subscribe((data) => {
         send(REMOTE, ["FOLDERS"], { folders: data, opened: get(openedFolders) })
@@ -384,6 +394,8 @@ export function storeSubscriber() {
 
         // dynamic values
         send(OUTPUT, ["ACTIVE_PROJECT"], a)
+
+        loadProjectShowsForPreload()
     })
 
     // dynamic values

@@ -1855,7 +1855,7 @@ export function getStyleTemplate(outSlide: OutSlide | null, currentStyle: Styles
     return template
 }
 
-function itemHasAutoSize(item: Item) {
+export function itemHasAutoSize(item: Item) {
     return (item.textFit || "none") !== "none" || !!item.auto
 }
 

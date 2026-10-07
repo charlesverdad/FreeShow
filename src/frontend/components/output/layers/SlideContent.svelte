@@ -1,13 +1,16 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte"
     import type { Item, OutSlide, SlideData, TimelineAction } from "../../../../types/Show"
-    import { scriptureSettings, showsCache, slideTimelineSpeedMultiplier, templates } from "../../../stores"
+    import { activeProject, currentWindow, projects, scriptureSettings, showsCache, special, slideTimelineSpeedMultiplier, templates } from "../../../stores"
     import { waitUntilValueIsDefined } from "../../../utils/common"
     import { shouldItemBeShown } from "../../edit/scripts/itemHelpers"
     import { getItemText } from "../../edit/scripts/textStyle"
     import { clone } from "../../helpers/array"
     import { loadCustomFonts } from "../../helpers/fonts"
-    import { getStyleTemplate, itemNeedsAutoSize, slideHasAutoSizeItem } from "../../helpers/output"
+    import { getStyleTemplate, itemHasAutoSize, itemNeedsAutoSize, slideHasAutoSizeItem } from "../../helpers/output"
+    import { buildPreloadQueue, canProbeAutoSize, createAutoSizeKey } from "../autosizePreload"
+    import type { AutoSizeTarget, PreloadShow } from "../autosizePreload"
+    import { getAutoSizeCacheStats } from "../../slide/autosizeCache"
     import Textbox from "../../slide/Textbox.svelte"
     import { SlideTimeline } from "../../timeline/SlideTimeline"
     import SlideItemTransition from "../transitions/SlideItemTransition.svelte"
@@ -68,7 +71,7 @@
         return JSON.stringify(oldItem) === JSON.stringify(newItem)
     }
     // maintain a hidden workload that primes autosize results ahead of the visible reveal
-    let precomputeTargets: { item: Item; index: number; key: string }[] = []
+    let precomputeTargets: AutoSizeTarget[] = []
     let precomputePending = new Set<string>()
 
     const showItemRef = { outputId, slideIndex: outSlide?.index }
@@ -139,17 +142,17 @@
             return
         }
 
-        const targets: { item: Item; index: number; key: string }[] = []
+        const targets: AutoSizeTarget[] = []
         const pendingKeys = new Set<string>()
+        const slideId = currentSlide?.id || ""
 
         items.forEach((item, index) => {
-            if (!itemNeedsAutoSize(item)) return
-            const key = createAutoSizeKey(item, index)
-            if (!key) return
-            if (item.autoFontSize) return // skip entries that already have cached measurements
+            // items usually carry an autoFontSize from the main window, but it can be at a different size
+            if (!canProbeAutoSize(item, currentStyle)) return
+            const key = createAutoSizeKey(slideId, item, index)
 
             pendingKeys.add(key)
-            targets.push({ item: clone(item), index, key })
+            targets.push({ item: clone(item), index, key, slideId, showId: outSlide?.id, layoutId: outSlide?.layout || "" })
         })
 
         precomputeTargets = targets
@@ -166,11 +169,6 @@
             onPrecomputeDone?.()
             onPrecomputeDone = null
         }
-    }
-
-    // create a stable identifier for precompute + visible textbox coordination
-    function createAutoSizeKey(item: Item, index: number) {
-        return item?.id ? String(item.id) : `idx-${index}`
     }
 
     // outgoing items hold for auto size delay while incoming content calculates font size
@@ -309,6 +307,7 @@
 
                     const showSlide = () => {
                         if (gen !== updateGeneration) return
+                        startStats()
                         show = true
 
                         // wait for between to set in transition
@@ -331,6 +330,160 @@
             })
         })
     }
+
+    // DEBUG TIMING (output window): time from showing a slide until its autosized textboxes are ready
+    let stats: { slideId: string; start: number; keys: Set<string>; cacheHits: number; measured: number } | null = null
+    function startStats() {
+        if (preview || $currentWindow !== "output") return
+        const keys = new Set<string>()
+        currentItems.forEach((item, index) => {
+            if (!persistentItemIndexes.includes(index) && itemHasAutoSize(item)) keys.add(createAutoSizeKey(current.currentSlide?.id, item, index))
+        })
+        stats = { slideId: current.currentSlide?.id, start: performance.now(), keys, cacheHits: 0, measured: 0 }
+        if (!keys.size) pushStats()
+    }
+    function pushStats() {
+        if (!stats) return
+        const w = window as any
+        if (!w.__autosizeStats) w.__autosizeStats = []
+        w.__autosizeStats.push({ slideId: stats.slideId, ms: Math.round(performance.now() - stats.start), cacheHits: stats.cacheHits, measured: stats.measured })
+        if (w.__autosizeStats.length > 200) w.__autosizeStats.shift()
+        stats = null
+    }
+    function handleVisibleReady(event: CustomEvent<{ key: string; cached: boolean }>) {
+        if (!stats || !stats.keys.delete(event.detail?.key)) return
+        if (event.detail.cached) stats.cacheHits++
+        else stats.measured++
+        if (!stats.keys.size) pushStats()
+    }
+
+    // BACKGROUND PRELOAD (output window): warm the autosize cache for the other slides (next two slides, or the whole project with special.textSizePreload)
+    let preloadMounted: AutoSizeTarget[] = []
+    let preloadQueue: AutoSizeTarget[] = []
+    let preloadGeneration = 0
+    let preloadSignature = ""
+    let preloadScheduled = ""
+    let preloadTimers = new Map<string, NodeJS.Timeout>()
+    const preloaded = new Set<string>()
+
+    $: preloadMode = $special.textSizePreload || "upcoming"
+
+    // project data changes (debounced)
+    let projectVersion = 0
+    let projectTimer: NodeJS.Timeout | null = null
+    $: bumpProjectVersion(preloadMode, $activeProject, $projects, $showsCache)
+    function bumpProjectVersion(mode: string, ..._deps: any[]) {
+        if (projectTimer) clearTimeout(projectTimer)
+        if (mode !== "project") return
+        projectTimer = setTimeout(() => projectVersion++, 500)
+    }
+
+    $: if (!preview && $currentWindow === "output" && outSlide?.id && outSlide.id !== "temp" && outSlide.id !== "tempText") schedulePreload(outSlide, currentStyle, preloadMode, ratio, styleIdOverride, projectVersion)
+    function schedulePreload(out: OutSlide, style: any, mode: string, size: number, styleOverride: string, version: number) {
+        // reset when the output size or style changes (upcoming also when the show changes)
+        const signature = `${mode}:${size}:${styleOverride}:${JSON.stringify(style)}${mode === "project" ? "" : `:${out.id}:${out.layout}`}`
+        if (signature !== preloadSignature) preloaded.clear()
+        preloadSignature = signature
+
+        // slide changes do not need a new queue in project mode, and line changes etc. never do
+        const scheduled = `${signature}:${out.id}:${out.layout}:${mode === "project" ? version : out.index}`
+        if (scheduled === preloadScheduled) return
+        preloadScheduled = scheduled
+
+        const gen = ++preloadGeneration
+        preloadTimers.forEach((timer) => clearTimeout(timer))
+        preloadTimers.clear()
+        preloadMounted = []
+        preloadQueue = []
+        setPreloadStats(mode, 0)
+
+        const start = (tries = 0) => {
+            if (gen !== preloadGeneration) return
+            // wait for the visible slide to be shown first
+            if (!show && tries < 20) {
+                setTimeout(() => start(tries + 1), 50)
+                return
+            }
+
+            const current = out.index ?? 0
+            const shows = mode === "project" ? getProjectShows(out) : [{ showId: out.id, layoutId: out.layout || "", first: [current + 1, current + 2], onlyFirst: true }]
+            preloadQueue = buildPreloadQueue(shows, { showId: out.id, index: current }, style, outputId).filter((target) => !preloaded.has(preloadId(target)))
+            setPreloadStats(mode, preloadQueue.length)
+            pumpPreload(gen)
+        }
+        if (typeof requestIdleCallback === "function") requestIdleCallback(() => start(), { timeout: 500 })
+        else setTimeout(() => start(), 50)
+    }
+
+    // the outputted show first, then every show in the active project
+    function getProjectShows(out: OutSlide): PreloadShow[] {
+        const current = out.index ?? 0
+        const shows: PreloadShow[] = [{ showId: out.id, layoutId: out.layout || "", first: [current + 1, current + 2, current - 1] }]
+        ;($projects[$activeProject || ""]?.shows || []).forEach((item) => {
+            if (item.type && item.type !== "show") return
+            const layoutId = item.layout || $showsCache[item.id]?.settings?.activeLayout || ""
+            if (!shows.some((a) => a.showId === item.id && a.layoutId === layoutId)) shows.push({ showId: item.id, layoutId })
+        })
+        // the current show is already first
+        return shows.filter((a, i) => i === 0 || a.showId !== out.id || a.layoutId !== out.layout)
+    }
+
+    const preloadId = (target: AutoSizeTarget) => `${target.key}|${JSON.stringify(target.item)}|${preloadSignature}`
+    const probeId = (target: AutoSizeTarget) => `${target.showId}|${target.key}`
+
+    // DEBUG (output window): progress of the current preload run
+    function setPreloadStats(mode: string, queued: number) {
+        if (preview || $currentWindow !== "output") return
+        ;(window as any).__autosizePreload = {
+            mode,
+            queued,
+            done: 0,
+            finishedAt: 0,
+            get cache() {
+                return getAutoSizeCacheStats()
+            }
+        }
+    }
+    function addPreloadDone() {
+        const stats = (window as any).__autosizePreload
+        if (stats && !preview && $currentWindow === "output") stats.done++
+    }
+
+    // mount up to 4 probes at a time
+    function pumpPreload(gen: number) {
+        if (gen !== preloadGeneration) return
+        while (preloadMounted.length < 4 && preloadQueue.length) {
+            const target = preloadQueue.shift()!
+            preloadMounted = [...preloadMounted, target]
+            preloadTimers.set(
+                probeId(target),
+                setTimeout(() => finishPreload(target, gen), 1500)
+            )
+        }
+        const stats = (window as any).__autosizePreload
+        if (stats && !preloadQueue.length && !preloadMounted.length && !stats.finishedAt) stats.finishedAt = Date.now()
+    }
+    function finishPreload(target: AutoSizeTarget | undefined, gen: number) {
+        if (!target || gen !== preloadGeneration) return
+        if (!preloadMounted.includes(target)) return
+        clearTimeout(preloadTimers.get(probeId(target)))
+        preloadTimers.delete(probeId(target))
+        preloadMounted = preloadMounted.filter((a) => a !== target)
+        addPreloadDone()
+        // give the main thread a break between batches
+        if (preloadMounted.length || typeof requestIdleCallback !== "function") pumpPreload(gen)
+        else requestIdleCallback(() => pumpPreload(gen), { timeout: 200 })
+    }
+    function handlePreloadReady(event: CustomEvent<{ key: string }>) {
+        const target = preloadMounted.find((a) => a.key === event.detail?.key)
+        if (!target) return
+        preloaded.add(preloadId(target))
+        finishPreload(target, preloadGeneration)
+    }
+    onDestroy(() => {
+        preloadGeneration++
+        preloadTimers.forEach((timer) => clearTimeout(timer))
+    })
 
     // OUTPUT SLIDE TIMELINE
     // get current slide timeline position
@@ -443,7 +596,7 @@
                 {preview}
                 slideIndex={current.outSlide?.index}
                 {styleIdOverride}
-                autoSizeKey={createAutoSizeKey(item, index)}
+                autoSizeKey={createAutoSizeKey(current.currentSlide?.id, item, index)}
                 updateDynamicValues={!isClearing}
             />
         {:else}
@@ -468,7 +621,8 @@
                             {preview}
                             slideIndex={customOut?.index}
                             {styleIdOverride}
-                            autoSizeKey={createAutoSizeKey(item, index)}
+                            autoSizeKey={createAutoSizeKey(customSlide?.id, item, index)}
+                            on:autosizeReady={handleVisibleReady}
                             updateDynamicValues={!isClearing}
                         />
                     </SlideItemTransition>
@@ -478,22 +632,25 @@
     {/if}
 {/each}
 
-{#if precomputeTargets.length}
+{#if precomputeTargets.length || preloadMounted.length}
     <div class="autosize-precompute" aria-hidden="true">
         {#each precomputeTargets as target (target.key)}
-            <Textbox item={target.item} {ratio} {outputId} outputStyle={currentStyle} {mirror} {preview} {styleIdOverride} ref={{ type: "show", showId: outSlide?.id, slideId: currentSlide?.id, id: currentSlide?.id || "", layoutId: outSlide?.layout }} autoSizeKey={target.key} on:autosizeReady={handlePrecomputeReady} updateDynamicValues={!isClearing} />
+            <Textbox item={target.item} {ratio} {outputId} outputStyle={currentStyle} {mirror} {preview} {styleIdOverride} ref={{ type: "show", showId: outSlide?.id, slideId: target.slideId, id: target.slideId, layoutId: outSlide?.layout }} autoSizeKey={target.key} on:autosizeReady={handlePrecomputeReady} updateDynamicValues={!isClearing} />
+        {/each}
+        {#each preloadMounted as target (probeId(target))}
+            <Textbox item={target.item} {ratio} {outputId} outputStyle={currentStyle} {mirror} {preview} {styleIdOverride} ref={{ type: "show", showId: target.showId, slideId: target.slideId, id: target.slideId, layoutId: target.layoutId }} autoSizeKey={target.key} on:autosizeReady={handlePreloadReady} updateDynamicValues={false} />
         {/each}
     </div>
 {/if}
 
 <style>
-    /* park precompute textboxes far off-screen so they never flash during transitions */
+    /* hidden probes lay out like the visible items (same container size) so the cache signature matches */
     .autosize-precompute {
         position: absolute;
-        top: -10000px;
-        left: -10000px;
-        width: 0;
-        height: 0;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
         overflow: hidden;
         pointer-events: none;
         visibility: hidden;

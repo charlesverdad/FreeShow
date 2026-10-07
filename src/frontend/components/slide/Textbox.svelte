@@ -68,7 +68,7 @@
     // reuse autosize work across components by caching measurements alongside a signature
     // surface measurement completion for parents that want to precompute autosize
     const dispatch = createEventDispatcher<{
-        autosizeReady: { key: string; fontSize: number }
+        autosizeReady: { key: string; fontSize: number; cached: boolean }
     }>()
 
     $: lines = clone(item?.lines)
@@ -411,7 +411,7 @@
                 return
             }
             if (fontSize !== item.autoFontSize) setItemAutoFontSize(fontSize)
-            markAutoSizeReady()
+            markAutoSizeReady(true)
             return
         }
 
@@ -609,11 +609,26 @@
     }
 
     // notify listeners that autosize finished (and stash readiness for this render)
-    function markAutoSizeReady() {
+    function markAutoSizeReady(cached = false) {
         if (autoSizeReady) return
         autoSizeReady = true
-        if (autoSizeKey) dispatch("autosizeReady", { key: autoSizeKey, fontSize })
+        if (autoSizeKey) dispatch("autosizeReady", { key: autoSizeKey, fontSize, cached })
         if (hideUntilAutosized) requestAnimationFrame(() => (hideUntilAutosized = false))
+    }
+
+    // once the element is bound the full signature (with container size) can match a warm cache, so skip the hide
+    $: if (itemElem && hideUntilAutosized) applyCachedAutoSize()
+    function applyCachedAutoSize() {
+        if (isStage || preview || chords || Number(outputStyle?.lines || 0)) return
+        if (getItemText(item).includes("{")) return
+
+        const cacheKey = buildAutoSizeCacheKey()
+        const cached = cacheKey ? readAutoSizeCache(cacheKey) : undefined
+        if (!cached || cached.signature !== buildAutoSizeSignature(undefined, undefined, chords)) return
+
+        fontSize = cached.fontSize
+        hideUntilAutosized = false
+        markAutoSizeReady(true)
     }
 
     function shouldHideUntilAutoSizeCompletes() {

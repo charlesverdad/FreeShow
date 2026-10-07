@@ -357,7 +357,7 @@
         if (!stats.keys.size) pushStats()
     }
 
-    // BACKGROUND PRELOAD (output window): warm the autosize cache for the other slides (see settings: special.textSizePreload)
+    // BACKGROUND PRELOAD (output window): warm the autosize cache for the other slides (next two slides, or the whole project with special.textSizePreload)
     let preloadMounted: AutoSizeTarget[] = []
     let preloadQueue: AutoSizeTarget[] = []
     let preloadGeneration = 0
@@ -396,7 +396,6 @@
         preloadMounted = []
         preloadQueue = []
         setPreloadStats(mode, 0)
-        if (mode === "off") return
 
         const start = (tries = 0) => {
             if (gen !== preloadGeneration) return

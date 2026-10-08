@@ -608,7 +608,7 @@
             <!-- Transitioning item: render with animation wrapper inside {#key} -->
             {#key show}
                 {#if show}
-                    <SlideItemTransition {preview} {transitionEnabled} {transitioningBetween} {isClearing} {incomingNeedsAutoSize} globalTransition={transition} currentSlide={current.currentSlide} {item} outSlide={current.outSlide} lines={current.lines} currentStyle={current.currentStyle} let:customSlide let:customItem let:customLines let:customOut let:transition>
+                    <SlideItemTransition {preview} {transitionEnabled} {transitioningBetween} {isClearing} {incomingNeedsAutoSize} autoSizeKey={createAutoSizeKey(current.currentSlide?.id, item, index)} globalTransition={transition} currentSlide={current.currentSlide} {item} outSlide={current.outSlide} lines={current.lines} currentStyle={current.currentStyle} let:customSlide let:customItem let:customLines let:customOut let:transition>
                         <Textbox
                             backdropFilter={current.slideData?.["backdrop-filter"] || ""}
                             chords={customItem.chords?.enabled}

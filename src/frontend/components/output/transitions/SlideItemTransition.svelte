@@ -1,9 +1,10 @@
 <script lang="ts">
     import { uid } from "uid"
     import type { Item, Transition } from "../../../../types/Show"
-    import { currentWindow, scriptureSettings, templates } from "../../../stores"
+    import { currentWindow } from "../../../stores"
     import { clone } from "../../helpers/array"
-    import { getStyleTemplate, itemNeedsAutoSize, slideHasAutoSizeItem } from "../../helpers/output"
+    import { itemNeedsAutoSize } from "../../helpers/output"
+    import { readAutoSizeCache } from "../../slide/autosizeCache"
     import OutputTransition from "./OutputTransition.svelte"
     // import { onMount } from "svelte"
 
@@ -13,6 +14,7 @@
     export let isClearing = false
     // outgoing items hold for auto size delay while incoming content calculates font size
     export let incomingNeedsAutoSize = true
+    export let autoSizeKey = ""
     export let preview = false
     export let item: Item
     export let currentSlide: any = {}
@@ -84,13 +86,9 @@
 
         // auto size delay
         if (!outDelay) {
-            let customTemplate = getStyleTemplate(outSlide, currentStyle)
-            if (!Object.keys(customTemplate).length && outSlide?.id === "temp") customTemplate = $templates[$scriptureSettings.template] || {}
-
             // only keep the legacy autosize delay when nothing has pre-populated a font size yet
-            const templateNeedsAutoSize = slideHasAutoSizeItem(customTemplate)
-
-            if (templateNeedsAutoSize || itemNeedsAutoSize(item)) {
+            // (preloaded sizes are cached, same key as Textbox, and textboxes stay hidden until their size is ready)
+            if (itemNeedsAutoSize(item) && !(autoSizeKey && readAutoSizeCache(`show:${autoSizeKey}`))) {
                 autoSizeDelay = 500
                 outDelay = autoSizeDelay
                 if (!inDelay) inDelay = outDelay * 0.98

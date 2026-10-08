@@ -61,7 +61,7 @@ import {
     variables
 } from "./../../stores"
 import { clone, keysToID, sortByName } from "./array"
-import { downloadOnlineMedia, encodeFilePath, getExtension, getFileName, getMedia, getMediaStyle, getMediaType, removeExtension } from "./media"
+import { downloadOnlineMedia, encodeFilePath, getExtension, getFileName, getMediaPath, getMediaStyle, getMediaType, removeExtension } from "./media"
 import { defaultLayers, getActiveOutputs, getAllActiveOutputIds, getAllNormalOutputs, getAllStageOutputs, getFirstActiveOutput, getFirstOutput, getWindowOutputId, isOutCleared, refreshOut, resolveOutputId, resolveOutputIds, setOutput, startFolderTimer } from "./output"
 import { OutputHelper } from "./OutputHelper"
 import { getSetChars } from "./randomValue"
@@ -306,6 +306,17 @@ function randomNumber(end: number) {
     return Math.floor(Math.random() * end)
 }
 
+// resolve background paths (no thumbnails), so the next slide can output its background without waiting
+export function warmBackgroundPaths(showId: string, layout: LayoutRef[], indexes?: number[]) {
+    const showMedia = _show(showId).get("media") || {}
+    ;(indexes || layout.map((_a, i) => i)).forEach((i) => {
+        const bg = layout[i]?.data?.background
+        const path = showMedia[bg || ""]?.path || showMedia[bg || ""]?.id
+        const type = showMedia[bg || ""]?.type || getMediaType(getExtension(path))
+        if (path && !layout[i].data.disabled && (type === "video" || type === "image" || type === "media") && !get(playerVideos)[path]) getMediaPath(path)
+    })
+}
+
 export function updateOut(showId: string, index: number, layout: LayoutRef[], extra = true, specificOutputId = "", actionTimeout = 10) {
     if (get(activePage) !== "edit") activeEdit.set({ slide: index, items: [] })
 
@@ -390,7 +401,7 @@ export function updateOut(showId: string, index: number, layout: LayoutRef[], ex
             const bgPath = bg?.path || bg?.id
             const extension = getExtension(bgPath)
             const type = bg.type || (get(playerVideos)[bgPath] ? "player" : getMediaType(extension))
-            const m = type === "video" || type === "image" || type === "media" ? await getMedia(bgPath) : { path: bgPath, data: clone(get(media)[bgPath]) }
+            const m = type === "video" || type === "image" || type === "media" ? await getMediaPath(bgPath) : { path: bgPath, data: clone(get(media)[bgPath]) }
 
             if (bg && m && m.path !== outputBg?.path) {
                 const name = bg.name || get(playerVideos)[bgPath]?.name || removeExtension(getFileName(m.path))
@@ -421,6 +432,9 @@ export function updateOut(showId: string, index: number, layout: LayoutRef[], ex
                 setOutput("background", bgData, false, outputId)
             }
         }
+
+        // resolve the upcoming backgrounds ahead of time
+        warmBackgroundPaths(showId, layout, [index + 1, index + 2])
 
         // mics
         if (data.mics) {

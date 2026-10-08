@@ -224,13 +224,15 @@
     let lines: { [key: string]: { start: number | null; end: number | null; linesStart?: number | null; linesEnd?: number | null; clickRevealed?: boolean } } = {}
     $: currentLineId = slide?.id
     const updateLinesTime = $currentWindow === "output" ? 50 : 10
+    // only wait for the other outputs when line values can affect the slide
+    const getLinesDelay = () => (Number(currentStyle?.lines || 0) > 0 || currentSlide?.items?.some((a) => a.lineReveal || a.clickReveal) || slide?.line || slide?.revealCount || slide?.itemClickReveal ? updateLinesTime : 0)
     let linesTimeout: NodeJS.Timeout | null = null
     $: if (currentLineId) {
         // don't update until all outputs has updated their "line" value
         if (linesTimeout) clearTimeout(linesTimeout)
         linesTimeout = setTimeout(() => {
             lines[currentLineId] = getOutputLines(slide!, currentStyle.lines) // , currentSlide
-        }, updateLinesTime)
+        }, getLinesDelay())
     }
 
     // metadata
@@ -356,7 +358,7 @@
                 actualCurrentSlide = clone(currentSlide)
                 actualCurrentLineId = clone(currentLineId)
             },
-            slide ? updateLinesTime : 0
+            slide ? getLinesDelay() : 0
         )
     }
 </script>

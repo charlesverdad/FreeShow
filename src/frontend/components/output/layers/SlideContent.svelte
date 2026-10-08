@@ -8,7 +8,8 @@
     import { clone } from "../../helpers/array"
     import { loadCustomFonts } from "../../helpers/fonts"
     import { getStyleTemplate, itemHasAutoSize, itemNeedsAutoSize, slideHasAutoSizeItem } from "../../helpers/output"
-    import { buildPreloadQueue, canProbeAutoSize, createAutoSizeKey } from "../autosizePreload"
+    import { buildPreloadQueue, canProbeAutoSize, createAutoSizeKey, getPreloadBackgroundPaths } from "../autosizePreload"
+    import { getPreloadedImageCount, preloadBackgrounds } from "../backgroundPreload"
     import type { AutoSizeTarget, PreloadShow } from "../autosizePreload"
     import { getAutoSizeCacheStats } from "../../slide/autosizeCache"
     import Textbox from "../../slide/Textbox.svelte"
@@ -409,6 +410,7 @@
             const shows = mode === "project" ? getProjectShows(out) : [{ showId: out.id, layoutId: out.layout || "", first: [current + 1, current + 2], onlyFirst: true }]
             preloadQueue = buildPreloadQueue(shows, { showId: out.id, index: current }, style, outputId).filter((target) => !preloaded.has(preloadId(target)))
             setPreloadStats(mode, preloadQueue.length)
+            preloadBackgrounds(getPreloadBackgroundPaths(shows, { showId: out.id, index: current }))
             pumpPreload(gen)
         }
         if (typeof requestIdleCallback === "function") requestIdleCallback(() => start(), { timeout: 500 })
@@ -441,6 +443,9 @@
             finishedAt: 0,
             get cache() {
                 return getAutoSizeCacheStats()
+            },
+            get images() {
+                return getPreloadedImageCount()
             }
         }
     }

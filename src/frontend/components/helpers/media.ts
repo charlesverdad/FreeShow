@@ -169,12 +169,16 @@ async function toDataURL(url: string): Promise<string> {
 const replacedPaths = new Map<string, { path: string; altPath?: string; thumbnail: string }>()
 const locatedMediaCache = new Map<string, { path: string; hasChanged: boolean } | null>()
 const mediaExistsCache = new Map<string, boolean>()
+const resolvedPaths = new Map<string, string>()
+const resolvingPaths = new Map<string, Promise<string | null>>()
 let currentlyGetting: string[] = []
 
 function clearMediaCaches() {
     locatedMediaCache.clear()
     replacedPaths.clear()
     mediaExistsCache.clear()
+    resolvedPaths.clear()
+    resolvingPaths.clear()
 }
 
 audioFolders.subscribe(clearMediaCaches)
@@ -238,6 +242,38 @@ export async function getMedia(path: string, size: number = mediaSize.drawerSize
         else replacedPaths.set(mediaId, { path, thumbnail })
         return { path, altPath, thumbnail, data: mediaData }
     }
+}
+
+// same path resolution as getMedia, but without generating a thumbnail
+export async function getMediaPath(path: string) {
+    if (typeof path !== "string" || !path) return null
+    if (locatedMediaCache.get(path) === null) return null
+
+    const data = clone(get(media)[path])
+    if (resolvedPaths.has(path)) return { path: resolvedPaths.get(path)!, data }
+
+    if (!resolvingPaths.has(path)) {
+        const promise = resolvePath(path).finally(() => resolvingPaths.delete(path))
+        resolvingPaths.set(path, promise)
+    }
+
+    const resolved = await resolvingPaths.get(path)
+    return resolved ? { path: resolved, data } : null
+}
+
+async function resolvePath(path: string) {
+    let resolved = path
+    if (path.startsWith("http")) {
+        resolved = (await downloadOnlineMedia(path)) || path
+    } else if (isLocalFile(path) && !path.includes("freeshow-cache") && !path.includes("media-cache")) {
+        const located = await locateMediaFile(path)
+        if (!located) return null
+        if (!located.hasChanged) addToMediaFolder(located.path)
+        resolved = located.path
+    }
+
+    resolvedPaths.set(path, resolved)
+    return resolved
 }
 
 // export function isMediaCached(path: string, size: number = mediaSize.drawerSize) {

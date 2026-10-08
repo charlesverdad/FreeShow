@@ -23,8 +23,18 @@
         if (mode !== "slide_shortcut" && mode !== "global_group" && mode !== "action") activePopup.set(null)
     })
 
+    const navigationKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End"]
+
     function keydown(e: KeyboardEvent) {
         if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+
+        // actions can use navigation keys (e.g. presentation clickers)
+        if (mode === "action" && navigationKeys.includes(e.key)) {
+            e.preventDefault()
+            updateValue(e.key.toLowerCase())
+            return
+        }
+
         if (!e.key || e.key.trim().length !== 1 || !isNaN(e.key as any)) return
 
         const isSpecial = [".", ",", "-", "+", "/", "*", "<", ">", "|", "\\", "¨", "'"].includes(e.key)

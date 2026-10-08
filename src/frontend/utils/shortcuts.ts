@@ -25,6 +25,7 @@ import { activeDrawerTab, activeEdit, activeFocus, activePage, activePopup, acti
 import { audioExtensions, imageExtensions, videoExtensions } from "../values/extensions"
 import { drawerTabs } from "../values/tabs"
 import { activeShow } from "./../stores"
+import { keyHasAction } from "../components/actions/actions"
 import { hideDisplay, isOutputWindow, togglePanels, triggerFunction } from "./common"
 import { getAccess } from "./profile"
 import { triggerPopupSubmit } from "./popup"
@@ -265,6 +266,9 @@ export function keydown(e: KeyboardEvent) {
     }
 
     if (keys[e.key]) {
+        // an action uses this key (triggered in Preview.svelte)
+        if (get(activePopup) === "assign_shortcut" || (!e.altKey && !e.shiftKey && keyHasAction(e.key))) return
+
         e.preventDefault()
         keys[e.key](e)
     }

@@ -17,6 +17,11 @@ import { API_ACTIONS } from "./api"
 import { sortByClosestMatch } from "./apiHelper"
 import { convertOldMidiToNewAction } from "./midi"
 
+// an action is set to activate on this key (keys without modifiers, see Preview.svelte)
+export function keyHasAction(key: string) {
+    return Object.values(get(actions)).some((action) => typeof action.keypressActivate === "string" && action.keypressActivate.toUpperCase() === key.toUpperCase())
+}
+
 export function runActionId(id: string, source = "action") {
     runAction(get(actions)[id], { source })
 }

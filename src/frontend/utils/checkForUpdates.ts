@@ -27,6 +27,9 @@ export async function getUpdateData(currentVersion: string, includeBeta: boolean
 }
 
 export function checkForUpdates(currentVersion: string) {
+    // Heartbeat build: don't offer official updates (they would remove the fork's changes)
+    return
+
     if (get(isDev) || get(alertUpdates) === false) return
     const includeBeta = currentVersion.includes("-beta") || get(special).betaVersionAlert
 

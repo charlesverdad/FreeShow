@@ -5,6 +5,9 @@ import { isProd } from ".."
 // let notification: Notification | null
 
 export default async function checkForUpdates() {
+    // Heartbeat build: never install official updates (they would remove the fork's changes)
+    return
+
     if (!isProd) return
 
     try {

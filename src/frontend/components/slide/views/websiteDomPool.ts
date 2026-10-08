@@ -6,12 +6,25 @@ type AttachedSlot = {
     webview: any
     src: string
     currentParent: HTMLElement | null
+    // the output this webview is shown for ("" for slide thumbnails, the editor etc.)
+    outputId: string
     lastUsed: number
+    // options of the placement currently showing it, so its events reach the right component
+    options: AttachOptions
     actionUnsubscribe?: () => void
 }
 
+type AttachOptions = {
+    src: string
+    zoom?: number
+    isOutput?: boolean
+    outputId?: string
+    onReady?: (webview: any) => void
+    onNavigate?: (url: string) => void
+}
+
 const MAX_CACHED_WEBVIEWS = 3
-const webviewPool = new Map<string, AttachedSlot>()
+const webviewPool: AttachedSlot[] = []
 
 let hiddenContainer: HTMLElement | null = null
 function getHiddenContainer(): HTMLElement {
@@ -24,103 +37,101 @@ function getHiddenContainer(): HTMLElement {
     return hiddenContainer
 }
 
+const isUnattached = (slot: AttachedSlot) => !slot.currentParent || slot.currentParent === hiddenContainer
+
 export function cleanupOldWebviews() {
-    const unattached = [...webviewPool.values()].filter((slot) => !slot.currentParent || slot.currentParent === hiddenContainer)
+    const unattached = webviewPool.filter(isUnattached)
     if (unattached.length > MAX_CACHED_WEBVIEWS) {
         unattached.sort((a, b) => a.lastUsed - b.lastUsed)
         for (const slot of unattached.slice(0, unattached.length - MAX_CACHED_WEBVIEWS)) {
             slot.actionUnsubscribe?.()
             slot.webview.remove?.()
-            webviewPool.delete(slot.src)
+            webviewPool.splice(webviewPool.indexOf(slot), 1)
         }
     }
 }
 
-export function attachPersistentWebview(
-    targetNode: HTMLElement,
-    options: {
-        src: string
-        zoom?: number
-        isOutput?: boolean
-        outputId?: string
-        onReady?: (webview: any) => void
-        onNavigate?: (url: string) => void
-    }
-) {
-    let currentSrc = options.src
-    if (!currentSrc) return
+function createSlot(options: AttachOptions): AttachedSlot {
+    const src = options.src
+    const webview = document.createElement("webview") as any
+    webview.src = src
+    webview.style.cssText = "width:100%;height:100%;display:block;"
 
-    let slot = webviewPool.get(currentSrc)
+    const actionUnsubscribe = websiteAction.subscribe((action) => {
+        if (!action || (action.src && action.src !== src)) return
 
-    if (!slot) {
-        const webview = document.createElement("webview") as any
-        webview.src = currentSrc
-        webview.style.cssText = "width:100%;height:100%;display:block;"
-
-        const actionUnsubscribe = websiteAction.subscribe((action) => {
-            if (!action || (action.src && action.src !== currentSrc)) return
-
-            try {
-                if (action.type === "key") {
-                    webview.sendInputEvent?.({ type: "keyDown", keyCode: action.keyCode })
-                    webview.sendInputEvent?.({ type: "keyUp", keyCode: action.keyCode })
-                } else if (action.type === "reload") {
-                    webview.reload?.()
-                }
-            } catch (err) {
-                console.debug("Website action failed:", err)
+        try {
+            if (action.type === "key") {
+                webview.sendInputEvent?.({ type: "keyDown", keyCode: action.keyCode })
+                webview.sendInputEvent?.({ type: "keyUp", keyCode: action.keyCode })
+            } else if (action.type === "reload") {
+                webview.reload?.()
             }
-        })
-
-        slot = {
-            webview,
-            src: currentSrc,
-            currentParent: null,
-            lastUsed: Date.now(),
-            actionUnsubscribe
+        } catch (err) {
+            console.debug("Website action failed:", err)
         }
+    })
 
-        webview.addEventListener("dom-ready", () => {
-            applyWebviewStyle(webview, options.zoom, options.isOutput, currentSrc)
-            options.onReady?.(webview)
+    const slot: AttachedSlot = { webview, src, currentParent: null, outputId: options.outputId || "", lastUsed: Date.now(), options, actionUnsubscribe }
 
-            if (options.isOutput && options.outputId) {
-                send(OUTPUT, ["FOCUS"], { id: options.outputId })
-                setTimeout(() => {
-                    try {
-                        webview.focus?.()
-                    } catch (err) {
-                        console.debug("Webview focus failed:", err)
-                    }
-                })
-            }
-        })
+    webview.addEventListener("dom-ready", () => {
+        const opts = slot.options
+        applyWebviewStyle(webview, opts.zoom, opts.isOutput, src)
+        opts.onReady?.(webview)
 
-        webview.addEventListener("did-navigate", () => {
-            try {
-                options.onNavigate?.(webview.getURL?.() || currentSrc)
-            } catch (e) {
-                console.debug(e)
-            }
-        })
+        if (opts.isOutput && opts.outputId) {
+            send(OUTPUT, ["FOCUS"], { id: opts.outputId })
+            setTimeout(() => {
+                try {
+                    webview.focus?.()
+                } catch (err) {
+                    console.debug("Webview focus failed:", err)
+                }
+            })
+        }
+    })
 
-        webviewPool.set(currentSrc, slot)
-    }
+    webview.addEventListener("did-navigate", () => {
+        try {
+            slot.options.onNavigate?.(webview.getURL?.() || src)
+        } catch (e) {
+            console.debug(e)
+        }
+    })
 
+    webviewPool.push(slot)
+    return slot
+}
+
+// Several places can show the same website at once (the slide thumbnail, the preview of each output).
+// Each placement gets its own webview, but a loaded one is reused where possible so the website keeps its state:
+// 1. the one already showing this website for the same output (moving to the next slide with the same website)
+// 2. one that is loaded but not shown anywhere
+function claimSlot(options: AttachOptions): AttachedSlot {
+    const outputId = options.outputId || ""
+    const sameSrc = webviewPool.filter((slot) => slot.src === options.src)
+
+    const slot = (outputId && sameSrc.find((a) => a.outputId === outputId)) || sameSrc.find(isUnattached) || createSlot(options)
+    slot.outputId = outputId
+    slot.options = options
     slot.lastUsed = Date.now()
-    slot.currentParent = targetNode
-    targetNode.appendChild(slot.webview)
-    applyWebviewStyle(slot.webview, options.zoom, options.isOutput, currentSrc)
-    options.onReady?.(slot.webview)
+    return slot
+}
+
+export function attachPersistentWebview(targetNode: HTMLElement, options: AttachOptions) {
+    if (!options.src) return
+
+    let slot: AttachedSlot | null = null
+    attach(options)
 
     return {
-        update(newOptions: typeof options) {
-            if (newOptions.src !== currentSrc) {
+        update(newOptions: AttachOptions) {
+            if (newOptions.src !== slot?.src) {
                 detach()
-                currentSrc = newOptions.src
-                attachPersistentWebview(targetNode, newOptions)
+                attach(newOptions)
             } else {
-                applyWebviewStyle(slot!.webview, newOptions.zoom, newOptions.isOutput, currentSrc)
+                slot.options = newOptions
+                applyWebviewStyle(slot.webview, newOptions.zoom, newOptions.isOutput, slot.src)
             }
         },
         destroy() {
@@ -128,19 +139,31 @@ export function attachPersistentWebview(
         }
     }
 
+    function attach(opts: AttachOptions) {
+        slot = null
+        if (!opts.src) return
+
+        slot = claimSlot(opts)
+        slot.currentParent = targetNode
+        targetNode.appendChild(slot.webview)
+        applyWebviewStyle(slot.webview, opts.zoom, opts.isOutput, slot.src)
+        opts.onReady?.(slot.webview)
+    }
+
     function detach() {
-        if (slot && slot.webview.parentNode === targetNode) {
-            slot.currentParent = getHiddenContainer()
-            getHiddenContainer().appendChild(slot.webview)
-            if (options.isOutput) {
-                try {
-                    slot.webview.setAudioMuted?.(true)
-                } catch (e) {
-                    console.debug(e)
-                }
+        // another placement may have taken it over already
+        if (!slot || slot.webview.parentNode !== targetNode) return
+
+        slot.currentParent = getHiddenContainer()
+        getHiddenContainer().appendChild(slot.webview)
+        if (slot.options.isOutput) {
+            try {
+                slot.webview.setAudioMuted?.(true)
+            } catch (e) {
+                console.debug(e)
             }
-            cleanupOldWebviews()
         }
+        cleanupOldWebviews()
     }
 }
 
